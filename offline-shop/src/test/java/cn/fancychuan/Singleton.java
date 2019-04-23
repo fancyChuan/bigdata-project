@@ -1,9 +1,9 @@
-package java.cn.fancychuan;
+package cn.fancychuan;
 
 public class Singleton {
     private static Singleton instance = null;
 
-    public Singleton() {
+    private Singleton() {
     }
 
     /**
