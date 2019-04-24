@@ -155,7 +155,7 @@ public class JDBCHelper {
     /**
      * 内部类： 查询回调接口
      */
-    interface QueryClassback {
+    public interface QueryClassback {
         // 处理查询结果
         void process(ResultSet resultSet) throws Exception;
     }
