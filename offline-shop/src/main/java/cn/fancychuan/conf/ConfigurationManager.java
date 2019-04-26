@@ -35,4 +35,14 @@ public class ConfigurationManager {
         }
         return 0;
     }
+
+    public static Boolean getBoolean(String key) {
+        String value = prop.getProperty(key);
+        try {
+            return Boolean.valueOf(value);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return false;
+    }
 }
