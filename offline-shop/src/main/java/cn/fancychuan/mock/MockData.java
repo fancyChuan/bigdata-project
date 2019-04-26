@@ -106,11 +106,12 @@ public class MockData {
 		
 		Dataset df = sqlContext.createDataFrame(rowsRDD, schema);
 		
-		df.registerTempTable("user_visit_action");  
+		df.registerTempTable("user_visit_action");
+        List list = df.takeAsList(1);
 //		for(Object _row : df.take(1)) {
 //			System.out.println(_row);
 //		}
-        System.out.println(df.take(1));
+        System.out.println(list);
 
         /**
 		 * ==================================================================
@@ -147,7 +148,7 @@ public class MockData {
 //		for(Object _row : df2.take(1)) {
 //			System.out.println(_row);
 //		}
-        System.out.println(df2.take(1));
+        System.out.println(df2.takeAsList(1));
 
         df2.registerTempTable("user_info");
 		
@@ -178,7 +179,7 @@ public class MockData {
 //		for(Object _row : df3.take(1)) {
 //			System.out.println(_row);
 //		}
-        System.out.println(df3.take(1));
+        System.out.println(df3.takeAsList(1));
 
         df3.registerTempTable("product_info");
 	}
