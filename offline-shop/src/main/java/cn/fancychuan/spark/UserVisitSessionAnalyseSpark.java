@@ -46,7 +46,8 @@ public class UserVisitSessionAnalyseSpark {
         JSONObject taskParam = JSONObject.parseObject(task.getTaskParam());
         // 获取指定日期范围内的RDD
         JavaRDD<Row> actionRDD = getActionRDDByDateRange(sqlContext, taskParam);
-        System.out.println(actionRDD.take(1));
+        // 对行为数据按照session粒度聚合，同时获取到用户信息
+        JavaPairRDD<String, String> sessionid2AggrInfoRDD = aggregateBySession(actionRDD, sqlContext);
 
         // JavaSparkContext需要关闭
         sc.close();
@@ -91,9 +92,13 @@ public class UserVisitSessionAnalyseSpark {
     }
 
     /**
-     * 对行为数据按照session粒度进行聚合
+     * 对行为数据按照session粒度进行聚合，同时获取到用户的信息
+     * 结果：
+     *      <sessionId, actionData+userInfo>
+     * 所以需要根据userid对两个RDD进行json，最后再拼接
      */
-    private static JavaPairRDD<String, String> aggregateBySession(JavaRDD<Row> actionRDD) {
+    private static JavaPairRDD<String, String> aggregateBySession(JavaRDD<Row> actionRDD, SQLContext sqlContext) {
+        // 1. 先提取到sessionId作为RDD的key
         JavaPairRDD<String, Row> sessionid2ActionRDD = actionRDD.mapToPair(new PairFunction<Row, String, Row>() {
             private static final long serialVersionUID = 3258845628763444421L;
 
@@ -102,39 +107,75 @@ public class UserVisitSessionAnalyseSpark {
                 return new Tuple2<>(row.getString(2), row);
             }
         });
+        // 2. 按照sessionId汇总
         JavaPairRDD<String, Iterable<Row>> sessid2rdds = sessionid2ActionRDD.groupByKey();
-        sessid2rdds.mapToPair(new PairFunction<Tuple2<String,Iterable<Row>>, String, String>() {
-            private static final long serialVersionUID = -2535958373572073846L;
+        // 3. 这里对行为数据聚合拼接，结果为 <userId, actionData>
+        JavaPairRDD<Long, String> userId2AggrPartInfoRDD = sessid2rdds.mapToPair(
+                new PairFunction<Tuple2<String, Iterable<Row>>, Long, String>() {
+                private static final long serialVersionUID = -2535958373572073846L;
 
-            @Override
-            public Tuple2<String, String> call(Tuple2<String, Iterable<Row>> stringIterableTuple2) throws Exception {
-                String sessionid = stringIterableTuple2._1;
-                Iterator<Row> iterator = stringIterableTuple2._2.iterator();
-                StringBuffer searchKeyWordsBuffer = new StringBuffer("");
-                StringBuffer clickCategoryIdsBuffer = new StringBuffer("");
-                // 遍历session所有的访问行为
-                while (iterator.hasNext()) {
-                    Row row = iterator.next();
-                    // 提取搜索关键词、点击品类字段
-                    String searchKeyword = row.getString(5);
-                    Long clickCategoryId = row.getLong(6);
-                    // 需要处理null的情况
-                    if (StringUtils.isNotEmpty(searchKeyword)) {
-                        if (!searchKeyWordsBuffer.toString().contains(searchKeyword)) {
-                            searchKeyWordsBuffer.append(searchKeyword + ",");
+                @Override
+                public Tuple2<Long, String> call(Tuple2<String, Iterable<Row>> stringIterableTuple2) throws Exception {
+                    String sessionid = stringIterableTuple2._1;
+                    Iterator<Row> iterator = stringIterableTuple2._2.iterator();
+                    StringBuffer searchKeyWordsBuffer = new StringBuffer("");
+                    StringBuffer clickCategoryIdsBuffer = new StringBuffer("");
+                    Long userId = null;
+                    // 遍历session所有的访问行为
+                    while (iterator.hasNext()) {
+                        Row row = iterator.next();
+                        // 提取搜索关键词、点击品类字段
+                        String searchKeyword = row.getString(5);
+                        Long clickCategoryId = row.getLong(6);
+                        if (userId == null) {
+                            userId = row.getLong(1);
+                        }
+                        // 需要处理null的情况
+                        if (StringUtils.isNotEmpty(searchKeyword)) {
+                            if (!searchKeyWordsBuffer.toString().contains(searchKeyword)) {
+                                searchKeyWordsBuffer.append(searchKeyword + ",");
+                            }
+                        }
+                        if (clickCategoryId != null) {
+                            if (!clickCategoryIdsBuffer.toString().contains(String.valueOf(clickCategoryId))) {
+                                clickCategoryIdsBuffer.append(clickCategoryId + ",");
+                            }
                         }
                     }
-                    if (clickCategoryId != null) {
-                        if (! clickCategoryIdsBuffer.toString().contains(String.valueOf(clickCategoryId))) {
-                            clickCategoryIdsBuffer.append(clickCategoryId + ",");
-                        }
-                    }
+                    String keywords = StringUtils.trimComma(searchKeyWordsBuffer.toString());
+                    String clickCategoryIds = StringUtils.trimComma(clickCategoryIdsBuffer.toString());
+                    String partAggrInfo = Constants.FIELD_SESSION_ID + "=" + sessionid + "|"
+                            + Constants.FIELD_SEARCH_KEYWORDS + "=" + keywords + "|"
+                            + Constants.FIELD_CATEGORY_ID + "=" + clickCategoryIds + "|";
+                    return new Tuple2<>(userId, partAggrInfo);
                 }
-                String keywords = StringUtils.trimComma(searchKeyWordsBuffer.toString());
-                String clickCategoryIds = StringUtils.trimComma(clickCategoryIdsBuffer.toString());
-                return null;
-            }
         });
-        return null;
+
+        // 4. 查询所有用户数据，结果为 <userId, userInfo>
+        JavaRDD<Row> userInfoRDD = sqlContext.sql("select * from user_info").toJavaRDD();
+        JavaPairRDD<Long, Row> userid2InfoRDd = userInfoRDD.mapToPair(row -> new Tuple2<Long, Row>(row.getLong(0), row));
+        // 5. 进行join操作并拼接成想要的数据格式
+        JavaPairRDD<Long, Tuple2<String, Row>> userid2FullInfoRDD = userId2AggrPartInfoRDD.join(userid2InfoRDd);
+        JavaPairRDD<String, String> wantRDD = userid2FullInfoRDD.mapToPair(item -> { // item这里是整个userid2FullInfoRDD的一个元素，为<userId, <sessInfo, userInfo>>
+            Long userId = item._1;
+            String sessInfo = item._2._1;
+            Row userInfoRow = item._2._2;
+
+            // 需要把sessionID提取出来
+            String sessionId = StringUtils.getFieldFromConcatString(sessInfo, "\\|", Constants.FIELD_SESSION_ID);
+            // 取出用户信息
+            int age = userInfoRow.getInt(3);
+            String professional = userInfoRow.getString(4);
+            String city = userInfoRow.getString(5);
+            String sex = userInfoRow.getString(6);
+
+            String wantInfo = sessInfo + "|"
+                    + Constants.FIELD_AGE + "=" + age + "|"
+                    + Constants.FIELD_PROFESSIONAL + "=" + professional + "|"
+                    + Constants.FIELD_CITY + "=" + city + "|"
+                    + Constants.FIELD_SEX + "=" + sex;
+            return new Tuple2<>(sessionId, wantInfo);
+        });
+        return wantRDD;
     }
 }
