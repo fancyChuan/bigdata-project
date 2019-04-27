@@ -8,6 +8,7 @@ import cn.fancychuan.domain.Task;
 import cn.fancychuan.mock.MockData;
 import cn.fancychuan.util.ParamUtils;
 import cn.fancychuan.util.StringUtils;
+import cn.fancychuan.util.ValidUtils;
 import com.alibaba.fastjson.JSONObject;
 import org.apache.spark.SparkConf;
 import org.apache.spark.SparkContext;
@@ -48,6 +49,14 @@ public class UserVisitSessionAnalyseSpark {
         JavaRDD<Row> actionRDD = getActionRDDByDateRange(sqlContext, taskParam);
         // 对行为数据按照session粒度聚合，同时获取到用户信息
         JavaPairRDD<String, String> sessionid2AggrInfoRDD = aggregateBySession(actionRDD, sqlContext);
+        // 过滤掉非目标数据
+        JavaPairRDD<String, String> filtedSession = filterSession(sessionid2AggrInfoRDD, taskParam);
+        System.out.println("过滤前的条数：" + sessionid2AggrInfoRDD.count());
+        for (Tuple2<String, String> tuple2 : sessionid2AggrInfoRDD.take(10)) {
+            System.out.println(tuple2._1 + " : " + tuple2._2);
+        }
+        System.out.println("过滤后的条数：" + filtedSession.count());
+
 
         // JavaSparkContext需要关闭
         sc.close();
@@ -64,8 +73,6 @@ public class UserVisitSessionAnalyseSpark {
 
     /**
      * 生成模拟数据，只有本地模式才会生成
-     * @param sc
-     * @param sqlContext
      */
     private static void mockData(JavaSparkContext sc, SQLContext sqlContext) {
         boolean local = ConfigurationManager.getBoolean(Constants.SPARK_LOCAL);
@@ -126,7 +133,7 @@ public class UserVisitSessionAnalyseSpark {
                         Row row = iterator.next();
                         // 提取搜索关键词、点击品类字段
                         String searchKeyword = row.getString(5);
-                        Long clickCategoryId = row.getLong(6);
+                        Long clickCategoryId = (Long) row.get(6);
                         if (userId == null) {
                             userId = row.getLong(1);
                         }
@@ -177,5 +184,61 @@ public class UserVisitSessionAnalyseSpark {
             return new Tuple2<>(sessionId, wantInfo);
         });
         return wantRDD;
+    }
+
+    /**
+     * 按照指定条件过滤session
+     */
+    private static JavaPairRDD<String, String> filterSession(JavaPairRDD<String, String> sessRDD, final JSONObject taskParam) {
+        String startAge = ParamUtils.getParam(taskParam, Constants.PARAM_START_AGE);
+        String endAge = ParamUtils.getParam(taskParam, Constants.PARAM_END_AGE);
+        String professionals = ParamUtils.getParam(taskParam, Constants.PARAM_PROFESSIONALS);
+        String cities = ParamUtils.getParam(taskParam, Constants.PARAM_CITIES);
+        String sex = ParamUtils.getParam(taskParam, Constants.PARAM_SEX);
+        String keywords = ParamUtils.getParam(taskParam, Constants.PARAM_KEYWORDS);
+        String categoryIds = ParamUtils.getParam(taskParam, Constants.PARAM_CATEGORY_IDS);
+
+        String _parameter = (startAge != null ? Constants.PARAM_START_AGE + "=" + startAge + "|" : "")
+                + (endAge != null ? Constants.PARAM_END_AGE + "=" + endAge + "|" : "")
+                + (professionals != null ? Constants.PARAM_PROFESSIONALS + "=" + professionals + "|" : "")
+                + (cities != null ? Constants.PARAM_CITIES + "=" + cities + "|" : "")
+                + (sex != null ? Constants.PARAM_SEX + "=" + sex + "|" : "")
+                + (keywords != null ? Constants.PARAM_KEYWORDS + "=" + keywords + "|" : "")
+                + (categoryIds != null ? Constants.PARAM_CATEGORY_IDS + "=" + categoryIds: "");
+
+        if(_parameter.endsWith("\\|")) {
+            _parameter = _parameter.substring(0, _parameter.length() - 1);
+        }
+        final String parameter = _parameter;
+
+        JavaPairRDD<String, String> filtedRDD = sessRDD.filter(item -> {
+            String aggrInfo = item._2;
+            // 按照年龄过滤
+            if (!ValidUtils.between(aggrInfo, Constants.FIELD_AGE, parameter, Constants.PARAM_START_AGE, Constants.PARAM_END_AGE)) {
+                return false;
+            }
+            // 按照职业过滤
+            if (!ValidUtils.in(aggrInfo, Constants.FIELD_PROFESSIONAL, parameter, Constants.PARAM_PROFESSIONALS)) {
+                return false;
+            }
+            // 按照城市过滤
+            if (!ValidUtils.in(aggrInfo, Constants.FIELD_CITY, parameter, Constants.PARAM_CITIES)) {
+                return false;
+            }
+            // 按照性别进行过滤 男/女  男，女
+            if (!ValidUtils.equal(aggrInfo, Constants.FIELD_SEX, parameter, Constants.PARAM_SEX)) {
+                return false;
+            }
+            // 按照搜索词进行过滤 session搜索的关键词只要有一个跟过滤条件中的关键词一样就可以
+            if (!ValidUtils.in(aggrInfo, Constants.FIELD_SEARCH_KEYWORDS, parameter, Constants.PARAM_KEYWORDS)) {
+                return false;
+            }
+            // 按照点击品类id进行过滤
+            if (!ValidUtils.in(aggrInfo, Constants.FIELD_CLICK_CATEGORY_IDS, parameter, Constants.PARAM_CATEGORY_IDS)) {
+                return false;
+            }
+            return true;
+        });
+        return filtedRDD;
     }
 }
