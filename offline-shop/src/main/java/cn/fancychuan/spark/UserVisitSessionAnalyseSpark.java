@@ -6,6 +6,7 @@ import cn.fancychuan.dao.ITaskDAO;
 import cn.fancychuan.dao.impl.DAOFactory;
 import cn.fancychuan.domain.Task;
 import cn.fancychuan.mock.MockData;
+import cn.fancychuan.util.DateUtils;
 import cn.fancychuan.util.ParamUtils;
 import cn.fancychuan.util.StringUtils;
 import cn.fancychuan.util.ValidUtils;
@@ -22,6 +23,7 @@ import org.apache.spark.sql.SQLContext;
 import org.apache.spark.sql.hive.HiveContext;
 import scala.Tuple2;
 
+import java.util.Date;
 import java.util.Iterator;
 
 /**
@@ -128,6 +130,9 @@ public class UserVisitSessionAnalyseSpark {
                     StringBuffer searchKeyWordsBuffer = new StringBuffer("");
                     StringBuffer clickCategoryIdsBuffer = new StringBuffer("");
                     Long userId = null;
+                    Date startTime = null;
+                    Date endTime = null;
+                    int stepLength = 0;
                     // 遍历session所有的访问行为
                     while (iterator.hasNext()) {
                         Row row = iterator.next();
@@ -148,12 +153,25 @@ public class UserVisitSessionAnalyseSpark {
                                 clickCategoryIdsBuffer.append(clickCategoryId + ",");
                             }
                         }
+                        // 取出行为时间，得到访问时间访问
+                        Date actionTime = DateUtils.parseTime(row.getString(4));
+                        if (startTime == null) {
+                            startTime = actionTime;
+                        }
+                        if (endTime == null) endTime = actionTime;
+                        if (actionTime.before(startTime)) startTime = actionTime;
+                        if (actionTime.after(endTime)) endTime = actionTime;
+                        // 访问步长递增
+                        stepLength ++;
                     }
                     String keywords = StringUtils.trimComma(searchKeyWordsBuffer.toString());
                     String clickCategoryIds = StringUtils.trimComma(clickCategoryIdsBuffer.toString());
+                    Long visitLength = endTime.getTime() - startTime.getTime(); // 访问时长
                     String partAggrInfo = Constants.FIELD_SESSION_ID + "=" + sessionid + "|"
                             + Constants.FIELD_SEARCH_KEYWORDS + "=" + keywords + "|"
-                            + Constants.FIELD_CATEGORY_ID + "=" + clickCategoryIds + "|";
+                            + Constants.FIELD_CATEGORY_ID + "=" + clickCategoryIds + "|"
+                            + Constants.FIELD_VISIT_LENGTH + "=" + visitLength + "|"
+                            + Constants.FIELD_STEP_LENGTH + "=" + stepLength;
                     return new Tuple2<>(userId, partAggrInfo);
                 }
         });
