@@ -11,6 +11,7 @@ import cn.fancychuan.util.ParamUtils;
 import cn.fancychuan.util.StringUtils;
 import cn.fancychuan.util.ValidUtils;
 import com.alibaba.fastjson.JSONObject;
+import org.apache.spark.Accumulator;
 import org.apache.spark.SparkConf;
 import org.apache.spark.SparkContext;
 import org.apache.spark.api.java.JavaPairRDD;
@@ -51,8 +52,10 @@ public class UserVisitSessionAnalyseSpark {
         JavaRDD<Row> actionRDD = getActionRDDByDateRange(sqlContext, taskParam);
         // 对行为数据按照session粒度聚合，同时获取到用户信息
         JavaPairRDD<String, String> sessionid2AggrInfoRDD = aggregateBySession(actionRDD, sqlContext);
+        // 使用自定义累加器
+        Accumulator<String> accumulator = sc.accumulator("", new SessionArrgStatAccumulator());
         // 过滤掉非目标数据
-        JavaPairRDD<String, String> filtedSession = filterSession(sessionid2AggrInfoRDD, taskParam);
+        JavaPairRDD<String, String> filtedSession = filterSession(sessionid2AggrInfoRDD, taskParam, accumulator);
         System.out.println("过滤前的条数：" + sessionid2AggrInfoRDD.count());
         for (Tuple2<String, String> tuple2 : sessionid2AggrInfoRDD.take(10)) {
             System.out.println(tuple2._1 + " : " + tuple2._2);
@@ -206,8 +209,11 @@ public class UserVisitSessionAnalyseSpark {
 
     /**
      * 按照指定条件过滤session
+     * 匿名内部类（算子函数）访问外部的对象，是要给外部的对象使用final修饰的 TODO：为什么？
      */
-    private static JavaPairRDD<String, String> filterSession(JavaPairRDD<String, String> sessRDD, final JSONObject taskParam) {
+    private static JavaPairRDD<String, String> filterSession(JavaPairRDD<String, String> sessRDD
+            , final JSONObject taskParam
+            , Accumulator<String> accumulator) {
         String startAge = ParamUtils.getParam(taskParam, Constants.PARAM_START_AGE);
         String endAge = ParamUtils.getParam(taskParam, Constants.PARAM_END_AGE);
         String professionals = ParamUtils.getParam(taskParam, Constants.PARAM_PROFESSIONALS);
@@ -255,6 +261,29 @@ public class UserVisitSessionAnalyseSpark {
             if (!ValidUtils.in(aggrInfo, Constants.FIELD_CLICK_CATEGORY_IDS, parameter, Constants.PARAM_CATEGORY_IDS)) {
                 return false;
             }
+
+            // 能走到这里说明是需要的session，这个时候对session进行统计
+            accumulator.add(Constants.SESSION_COUNT);
+            long visitLength = Long.valueOf(StringUtils.getFieldFromConcatString(aggrInfo, "\\|", Constants.FIELD_VISIT_LENGTH));
+            long stepLength = Long.valueOf(StringUtils.getFieldFromConcatString(aggrInfo, "\\|", Constants.FIELD_STEP_LENGTH));
+            // 计算访问时长范围
+            if (visitLength >= 1 && visitLength <= 3) accumulator.add(Constants.TIME_PERIOD_1s_3s);
+            else if (visitLength >= 4 && visitLength <= 6) accumulator.add(Constants.TIME_PERIOD_4s_6s);
+            else if (visitLength >= 7 && visitLength <= 9) accumulator.add(Constants.TIME_PERIOD_7s_9s);
+            else if (visitLength >= 10 && visitLength <= 30) accumulator.add(Constants.TIME_PERIOD_10s_30s);
+            else if (visitLength >= 30 && visitLength <= 60) accumulator.add(Constants.TIME_PERIOD_30s_60s);
+            else if(visitLength > 60 && visitLength <= 180) accumulator.add(Constants.TIME_PERIOD_1m_3m);
+            else if(visitLength > 180 && visitLength <= 600) accumulator.add(Constants.TIME_PERIOD_3m_10m);
+            else if(visitLength > 600 && visitLength <= 1800) accumulator.add(Constants.TIME_PERIOD_10m_30m);
+            else if(visitLength > 1800) accumulator.add(Constants.TIME_PERIOD_30m);
+            // 计算访问步长
+            if(stepLength >= 1 && stepLength <= 3) accumulator.add(Constants.STEP_PERIOD_1_3);
+            else if(stepLength >= 4 && stepLength <= 6) accumulator.add(Constants.STEP_PERIOD_4_6);
+            else if(stepLength >= 7 && stepLength <= 9) accumulator.add(Constants.STEP_PERIOD_7_9);
+            else if(stepLength >= 10 && stepLength <= 30) accumulator.add(Constants.STEP_PERIOD_10_30);
+            else if(stepLength > 30 && stepLength <= 60) accumulator.add(Constants.STEP_PERIOD_30_60);
+            else if(stepLength > 60) accumulator.add(Constants.STEP_PERIOD_60);
+
             return true;
         });
         return filtedRDD;
