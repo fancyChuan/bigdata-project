@@ -98,6 +98,27 @@ public class DateUtils {
 	public static String getTodayDate() {
 		return DATE_FORMAT.format(new Date());  
 	}
+
+    private static long random(long begin, long end) {
+        long rtn = begin + (long) (Math.random() * (end - begin));
+        // 如果返回的是开始时间和结束时间，则递归调用本函数查找随机值
+        if (rtn == begin || rtn == end) {
+            return random(begin, end);
+        }
+        return rtn;
+	}
+
+	public static String getRandomDate(){
+	    try {
+            Date start = DATE_FORMAT.parse("2019-04-10");// 构造开始日期
+            Date end = DATE_FORMAT.parse("2019-05-10");// 构造结束日期
+            long date = random(start.getTime(), end.getTime());
+            return DATE_FORMAT.format(new Date(date));
+        } catch (ParseException e) {
+	        e.printStackTrace();
+        }
+        return getTodayDate();
+    }
 	
 	/**
 	 * 获取昨天的日期（yyyy-MM-dd）

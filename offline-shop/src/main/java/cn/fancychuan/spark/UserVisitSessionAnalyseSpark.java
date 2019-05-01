@@ -61,7 +61,7 @@ public class UserVisitSessionAnalyseSpark {
             System.out.println(tuple2._1 + " : " + tuple2._2);
         }
         System.out.println("过滤后的条数：" + filtedSession.count());
-
+        System.out.println("自定义累加器：" + accumulator.value());
 
         // JavaSparkContext需要关闭
         sc.close();
