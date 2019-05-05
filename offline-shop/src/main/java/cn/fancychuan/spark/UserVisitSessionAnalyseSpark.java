@@ -55,7 +55,7 @@ public class UserVisitSessionAnalyseSpark {
         // 使用自定义累加器
         Accumulator<String> accumulator = sc.accumulator("", new SessionArrgStatAccumulator());
         // 过滤掉非目标数据
-        JavaPairRDD<String, String> filtedSession = filterSession(sessionid2AggrInfoRDD, taskParam, accumulator);
+        JavaPairRDD<String, String> filtedSession = filterSessionAndStat(sessionid2AggrInfoRDD, taskParam, accumulator);
         System.out.println("过滤前的条数：" + sessionid2AggrInfoRDD.count());
         for (Tuple2<String, String> tuple2 : sessionid2AggrInfoRDD.take(10)) {
             System.out.println(tuple2._1 + " : " + tuple2._2);
@@ -211,7 +211,7 @@ public class UserVisitSessionAnalyseSpark {
      * 按照指定条件过滤session
      * 匿名内部类（算子函数）访问外部的对象，是要给外部的对象使用final修饰的 TODO：为什么？
      */
-    private static JavaPairRDD<String, String> filterSession(JavaPairRDD<String, String> sessRDD
+    private static JavaPairRDD<String, String> filterSessionAndStat(JavaPairRDD<String, String> sessRDD
             , final JSONObject taskParam
             , Accumulator<String> accumulator) {
         String startAge = ParamUtils.getParam(taskParam, Constants.PARAM_START_AGE);
