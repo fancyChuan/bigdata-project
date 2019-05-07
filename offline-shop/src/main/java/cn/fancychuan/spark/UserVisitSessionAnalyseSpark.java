@@ -23,8 +23,8 @@ import org.apache.spark.sql.SQLContext;
 import org.apache.spark.sql.hive.HiveContext;
 import scala.Tuple2;
 
-import java.util.Date;
-import java.util.Iterator;
+
+import java.util.*;
 
 /**
  * 用户访问session分析spark作业
@@ -291,6 +291,11 @@ public class UserVisitSessionAnalyseSpark {
     }
 
 
+    /**
+     * 把统计结果写入mysql
+     * 【注意】
+     *      value是统计后的累积器的值，需要在一个action出发job以后才能有值，这个函数的执行才有意义
+     */
     private static void calculateAndWrite2Mysql(String value, long taskid) {
         long session_count = Long.valueOf(StringUtils.getFieldFromConcatString(value, "\\|", Constants.SESSION_COUNT));
         long visit_length_1s_3s = Long.valueOf(StringUtils.getFieldFromConcatString(value, "\\|", Constants.TIME_PERIOD_1s_3s));
@@ -348,5 +353,69 @@ public class UserVisitSessionAnalyseSpark {
 
         ISessionAggrStatDAO sessionAggrStatDAO = DAOFactory.getSessionAggrStatDAO();
         sessionAggrStatDAO.insert(sessionAggrStat);
+    }
+
+    /**
+     * 随机抽取session：按照每个小时的session占比数来分层抽样
+     */
+    private static void randomExtractSession(JavaPairRDD<String, String> session2AggrInfoRDD) {
+        JavaPairRDD<String, String> time2sessionRDD = session2AggrInfoRDD.mapToPair(tuple -> {
+            String sessionid = tuple._1;
+            String aggrInfo = tuple._2;
+            String startTime = StringUtils.getFieldFromConcatString(aggrInfo, "\\|", Constants.FIELD_START_TIME);
+            String dateHour = DateUtils.getDateHour(startTime);
+            return new Tuple2<>(dateHour, aggrInfo);
+        });
+        Map<String, Long> countMap = time2sessionRDD.countByKey();
+        // 把统计结果存为 <date, <hour, count>>
+        HashMap<String, Map<String, Long>> dayHourCountMap = new HashMap<>();
+        for (Map.Entry<String, Long> entry : countMap.entrySet()) {
+            String dateHour = entry.getKey();
+            String date = dateHour.split("_")[0];
+            String hour = dateHour.split("_")[1];
+            long count = entry.getValue();
+
+            Map<String, Long> hourCountMap = dayHourCountMap.get(date);
+            if (hourCountMap == null) { // 如果d当天还创建过，需要新建一个
+                hourCountMap = new HashMap<>();
+                hourCountMap.put(hour, count);  // 把当前遍历到的hour的统计结果放进去
+            }
+            dayHourCountMap.put(date, hourCountMap); // 把结果放回去Map中替换掉旧Map
+        }
+        // 每天需要抽取的数量
+        long extractNumPerDay = 100 / dayHourCountMap.size();
+        // 最终需要的随机数结构 <date, <hour, [1,2,4,6]>
+        HashMap<String, Map<String, List<Integer>>> dateHourExtractMap = new HashMap<>();
+        for (Map.Entry<String, Map<String, Long>> entry : dayHourCountMap.entrySet()) {
+            Random random = new Random();
+            String date = entry.getKey();
+            long daySessCnt = 0; // 当天的session总数
+
+            // 开始遍历每小时的统计情况，并生成随机数组
+            Map<String, List<Integer>> hourRandomListMap = dateHourExtractMap.get(date);
+            if (hourRandomListMap == null) {
+                hourRandomListMap = new HashMap<>();
+            }
+            Map<String, Long> hourCountMap = entry.getValue();
+            // 遍历统计出每天的session数
+            for (Long count : hourCountMap.values()) {
+                daySessCnt += count;
+            }
+            for (Map.Entry<String, Long> hourCntEntry : hourCountMap.entrySet()) {
+                String hour = hourCntEntry.getKey();
+                long count = hourCntEntry.getValue();
+                long hourExtractNum = count / daySessCnt * extractNumPerDay;
+//                if (hourExtractNum > count) {
+//                    hourExtractNum = count;
+//                }
+                LinkedList<Integer> randomList = new LinkedList<>();
+                for (long i = 0; i < hourExtractNum; i++) {
+                    int ranInt = random.nextInt((int) count);
+                    randomList.add(ranInt);
+                }
+                hourRandomListMap.put(hour, randomList);
+                dateHourExtractMap.put(hour, hourRandomListMap);
+            }
+        }
     }
 }
