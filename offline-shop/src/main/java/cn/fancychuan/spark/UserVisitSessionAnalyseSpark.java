@@ -3,9 +3,11 @@ package cn.fancychuan.spark;
 import cn.fancychuan.conf.ConfigurationManager;
 import cn.fancychuan.constant.Constants;
 import cn.fancychuan.dao.ISessionAggrStatDAO;
+import cn.fancychuan.dao.ISessionRandomExtractDAO;
 import cn.fancychuan.dao.ITaskDAO;
 import cn.fancychuan.dao.impl.DAOFactory;
 import cn.fancychuan.domain.SessionAggrStat;
+import cn.fancychuan.domain.SessionRandomExtract;
 import cn.fancychuan.domain.Task;
 import cn.fancychuan.mock.MockData;
 import cn.fancychuan.util.*;
@@ -358,7 +360,7 @@ public class UserVisitSessionAnalyseSpark {
     /**
      * 随机抽取session：按照每个小时的session占比数来分层抽样
      */
-    private static void randomExtractSession(JavaPairRDD<String, String> session2AggrInfoRDD) {
+    private static void randomExtractSession(JavaPairRDD<String, String> session2AggrInfoRDD, long taskid) {
         JavaPairRDD<String, String> time2sessionRDD = session2AggrInfoRDD.mapToPair(tuple -> {
             String sessionid = tuple._1;
             String aggrInfo = tuple._2;
@@ -385,7 +387,8 @@ public class UserVisitSessionAnalyseSpark {
         // 每天需要抽取的数量
         long extractNumPerDay = 100 / dayHourCountMap.size();
         // 最终需要的随机数结构 <date, <hour, [1,2,4,6]>
-        HashMap<String, Map<String, List<Integer>>> dateHourExtractMap = new HashMap<>();
+        // 在算子中使用的时候，需要对变量加上final修饰
+        final HashMap<String, Map<String, List<Integer>>> dateHourExtractMap = new HashMap<>();
         for (Map.Entry<String, Map<String, Long>> entry : dayHourCountMap.entrySet()) {
             Random random = new Random();
             String date = entry.getKey();
@@ -411,11 +414,44 @@ public class UserVisitSessionAnalyseSpark {
                 LinkedList<Integer> randomList = new LinkedList<>();
                 for (long i = 0; i < hourExtractNum; i++) {
                     int ranInt = random.nextInt((int) count);
+                    while (randomList.contains(ranInt)) {
+                        ranInt = random.nextInt((int) count);
+                    }
                     randomList.add(ranInt);
                 }
-                hourRandomListMap.put(hour, randomList);
-                dateHourExtractMap.put(hour, hourRandomListMap);
+                hourRandomListMap.put(hour, randomList); // 其实这个地方是可以放在前面的，因为Map里面存的是对象的索引
+                dateHourExtractMap.put(hour, hourRandomListMap); // TODO：总结思考下容器类变量存元素的优雅写法
             }
         }
+
+        //
+        JavaPairRDD<String, Iterable<String>> time2sessionsRDD = time2sessionRDD.groupByKey();
+        time2sessionsRDD.flatMap(tuple2 -> {
+            ArrayList<String> extractSessions = new ArrayList<>();
+            String dateHour = tuple2._1;
+            String date = dateHour.split("_")[0];
+            String hour = dateHour.split("_")[1];
+            Iterator<String> iterator = tuple2._2.iterator();
+            List<Integer> randomList = dateHourExtractMap.get(date).get(hour);
+            ISessionRandomExtractDAO randomExtractDAO = DAOFactory.getSessionRandomExtractDAO();
+            int index = 0;
+            while (iterator.hasNext()) {
+                String aggrInfo = iterator.next();
+                if (randomList.contains(index)) {
+                    String sessionid = StringUtils.getFieldFromConcatString(aggrInfo, "\\|", Constants.FIELD_SESSION_ID);
+                    SessionRandomExtract sessionRandomExtract = new SessionRandomExtract();
+                    sessionRandomExtract.setTaskid(taskid);
+                    sessionRandomExtract.setSessionid(sessionid);
+                    sessionRandomExtract.setStartTime(StringUtils.getFieldFromConcatString(aggrInfo, "\\|", Constants.FIELD_START_TIME));
+                    sessionRandomExtract.setSearchKeywords(StringUtils.getFieldFromConcatString(aggrInfo, "\\|", Constants.FIELD_SEARCH_KEYWORDS));
+                    sessionRandomExtract.setClickCategoryIds(StringUtils.getFieldFromConcatString(aggrInfo, "\\|", Constants.FIELD_CLICK_CATEGORY_IDS));
+                    randomExtractDAO.insert(sessionRandomExtract);
+
+                    extractSessions.add(sessionid);
+                }
+                index ++;
+            }
+
+        })
     }
 }
