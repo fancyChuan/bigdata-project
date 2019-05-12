@@ -426,8 +426,8 @@ public class UserVisitSessionAnalyseSpark {
 
         //
         JavaPairRDD<String, Iterable<String>> time2sessionsRDD = time2sessionRDD.groupByKey();
-        time2sessionsRDD.flatMap(tuple2 -> {
-            ArrayList<String> extractSessions = new ArrayList<>();
+        JavaPairRDD<String, String> extractSessionsRDD = time2sessionsRDD.flatMapToPair(tuple2 -> {
+            List<Tuple2<String, String>> extractSessions = new ArrayList<>();
             String dateHour = tuple2._1;
             String date = dateHour.split("_")[0];
             String hour = dateHour.split("_")[1];
@@ -447,11 +447,11 @@ public class UserVisitSessionAnalyseSpark {
                     sessionRandomExtract.setClickCategoryIds(StringUtils.getFieldFromConcatString(aggrInfo, "\\|", Constants.FIELD_CLICK_CATEGORY_IDS));
                     randomExtractDAO.insert(sessionRandomExtract);
 
-                    extractSessions.add(sessionid);
+                    extractSessions.add(new Tuple2<>(sessionid, sessionid));
                 }
                 index ++;
             }
-
-        })
+            return extractSessions.iterator();
+        });
     }
 }
