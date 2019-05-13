@@ -36,7 +36,8 @@ public class MockData {
 		String[] searchKeywords = new String[] {"火锅", "蛋糕", "重庆辣子鸡", "重庆小面",
 				"呷哺呷哺", "新辣道鱼火锅", "国贸大厦", "太古商场", "日本料理", "温泉"};
 		// String date = DateUtils.getTodayDate();
-		String date = DateUtils.getRandomDate(); // 修改为生成随机日期
+		// String date = DateUtils.getRandomDate(); // 修改为生成随机日期
+		String date = "2019-05-05";
 		String[] actions = new String[]{"search", "click", "order", "pay"};
 		Random random = new Random();
 		

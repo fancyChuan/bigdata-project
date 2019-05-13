@@ -110,7 +110,7 @@ public class DateUtils {
 
 	public static String getRandomDate(){
 	    try {
-            Date start = DATE_FORMAT.parse("2019-04-10");// 构造开始日期
+            Date start = DATE_FORMAT.parse("2019-05-01");// 构造开始日期
             Date end = DATE_FORMAT.parse("2019-05-10");// 构造结束日期
             long date = random(start.getTime(), end.getTime());
             return DATE_FORMAT.format(new Date(date));

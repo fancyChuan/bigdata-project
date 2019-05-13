@@ -3,10 +3,12 @@ package cn.fancychuan.spark;
 import cn.fancychuan.conf.ConfigurationManager;
 import cn.fancychuan.constant.Constants;
 import cn.fancychuan.dao.ISessionAggrStatDAO;
+import cn.fancychuan.dao.ISessionDetailDAO;
 import cn.fancychuan.dao.ISessionRandomExtractDAO;
 import cn.fancychuan.dao.ITaskDAO;
 import cn.fancychuan.dao.impl.DAOFactory;
 import cn.fancychuan.domain.SessionAggrStat;
+import cn.fancychuan.domain.SessionDetail;
 import cn.fancychuan.domain.SessionRandomExtract;
 import cn.fancychuan.domain.Task;
 import cn.fancychuan.mock.MockData;
@@ -58,14 +60,17 @@ public class UserVisitSessionAnalyseSpark {
         // 过滤掉非目标数据
         JavaPairRDD<String, String> filtedSession = filterSessionAndStat(sessionid2AggrInfoRDD, taskParam, accumulator);
         System.out.println("过滤前的条数：" + sessionid2AggrInfoRDD.count());
-        for (Tuple2<String, String> tuple2 : sessionid2AggrInfoRDD.take(10)) {
+        for (Tuple2<String, String> tuple2 : sessionid2AggrInfoRDD.take(5)) {
             System.out.println(tuple2._1 + " : " + tuple2._2);
         }
         System.out.println("过滤后的条数：" + filtedSession.count());
         System.out.println("自定义累加器：" + accumulator.value());
         // 把统计后的结果写入mysql
         calculateAndWrite2Mysql(accumulator.value(), taskid);
-
+        System.out.println("写入完成，准备抽取session");
+        // 随机抽取session
+        JavaPairRDD<String, Row> session2ActionRDD = actionRDD.mapToPair(row -> new Tuple2<>(row.getString(2), row));
+        randomExtractSession(sessionid2AggrInfoRDD, taskid, session2ActionRDD);
         // JavaSparkContext需要关闭
         sc.close();
     }
@@ -177,7 +182,8 @@ public class UserVisitSessionAnalyseSpark {
                             + Constants.FIELD_SEARCH_KEYWORDS + "=" + keywords + "|"
                             + Constants.FIELD_CATEGORY_ID + "=" + clickCategoryIds + "|"
                             + Constants.FIELD_VISIT_LENGTH + "=" + visitLength + "|"
-                            + Constants.FIELD_STEP_LENGTH + "=" + stepLength;
+                            + Constants.FIELD_STEP_LENGTH + "=" + stepLength + "|"
+                            + Constants.FIELD_START_TIME + "=" + DateUtils.formatTime(startTime);
                     return new Tuple2<>(userId, partAggrInfo);
                 }
         });
@@ -360,7 +366,9 @@ public class UserVisitSessionAnalyseSpark {
     /**
      * 随机抽取session：按照每个小时的session占比数来分层抽样
      */
-    private static void randomExtractSession(JavaPairRDD<String, String> session2AggrInfoRDD, long taskid) {
+    private static void randomExtractSession(JavaPairRDD<String, String> session2AggrInfoRDD,
+                                             final long taskid,
+                                             JavaPairRDD<String, Row> sessionid2actionRDD) {
         JavaPairRDD<String, String> time2sessionRDD = session2AggrInfoRDD.mapToPair(tuple -> {
             String sessionid = tuple._1;
             String aggrInfo = tuple._2;
@@ -378,10 +386,10 @@ public class UserVisitSessionAnalyseSpark {
             long count = entry.getValue();
 
             Map<String, Long> hourCountMap = dayHourCountMap.get(date);
-            if (hourCountMap == null) { // 如果d当天还创建过，需要新建一个
+            if (hourCountMap == null) { // 如果当天还创建过，需要新建一个
                 hourCountMap = new HashMap<>();
-                hourCountMap.put(hour, count);  // 把当前遍历到的hour的统计结果放进去
             }
+            hourCountMap.put(hour, count);  // 把当前遍历到的hour的统计结果放进去
             dayHourCountMap.put(date, hourCountMap); // 把结果放回去Map中替换掉旧Map
         }
         // 每天需要抽取的数量
@@ -389,28 +397,31 @@ public class UserVisitSessionAnalyseSpark {
         // 最终需要的随机数结构 <date, <hour, [1,2,4,6]>
         // 在算子中使用的时候，需要对变量加上final修饰
         final HashMap<String, Map<String, List<Integer>>> dateHourExtractMap = new HashMap<>();
+        // 开始遍历每一天
         for (Map.Entry<String, Map<String, Long>> entry : dayHourCountMap.entrySet()) {
             Random random = new Random();
             String date = entry.getKey();
             long daySessCnt = 0; // 当天的session总数
 
+            // 获取到每天的小时粒度的计数结果
+            Map<String, Long> hourCountMap = entry.getValue();
+            // 第一次遍历统计出每天的session数
+            for (Long count : hourCountMap.values()) {
+                daySessCnt += count;
+            }
             // 开始遍历每小时的统计情况，并生成随机数组
             Map<String, List<Integer>> hourRandomListMap = dateHourExtractMap.get(date);
             if (hourRandomListMap == null) {
                 hourRandomListMap = new HashMap<>();
             }
-            Map<String, Long> hourCountMap = entry.getValue();
-            // 遍历统计出每天的session数
-            for (Long count : hourCountMap.values()) {
-                daySessCnt += count;
-            }
+            // 第二次遍历，生成随机数
             for (Map.Entry<String, Long> hourCntEntry : hourCountMap.entrySet()) {
                 String hour = hourCntEntry.getKey();
                 long count = hourCntEntry.getValue();
-                long hourExtractNum = count / daySessCnt * extractNumPerDay;
-//                if (hourExtractNum > count) {
-//                    hourExtractNum = count;
-//                }
+                long hourExtractNum = (int)((double) count / daySessCnt * extractNumPerDay);
+                if (hourExtractNum > count) { // 当一天只有一个小时的时候，hourExtractNum就会等于 extractNumPerDay，可能比较大
+                    hourExtractNum = count;
+                }
                 LinkedList<Integer> randomList = new LinkedList<>();
                 for (long i = 0; i < hourExtractNum; i++) {
                     int ranInt = random.nextInt((int) count);
@@ -420,24 +431,27 @@ public class UserVisitSessionAnalyseSpark {
                     randomList.add(ranInt);
                 }
                 hourRandomListMap.put(hour, randomList); // 其实这个地方是可以放在前面的，因为Map里面存的是对象的索引
-                dateHourExtractMap.put(hour, hourRandomListMap); // TODO：总结思考下容器类变量存元素的优雅写法
+                dateHourExtractMap.put(date, hourRandomListMap); // 覆盖掉原来的结果
             }
         }
 
-        //
+        // 获取需要随机抽取的索引
         JavaPairRDD<String, Iterable<String>> time2sessionsRDD = time2sessionRDD.groupByKey();
         JavaPairRDD<String, String> extractSessionsRDD = time2sessionsRDD.flatMapToPair(tuple2 -> {
             List<Tuple2<String, String>> extractSessions = new ArrayList<>();
             String dateHour = tuple2._1;
             String date = dateHour.split("_")[0];
             String hour = dateHour.split("_")[1];
+            // 聚合（小时粒度）后的行为数据的集合
             Iterator<String> iterator = tuple2._2.iterator();
+            // 拿到随机数（随机抽取的种子）
             List<Integer> randomList = dateHourExtractMap.get(date).get(hour);
             ISessionRandomExtractDAO randomExtractDAO = DAOFactory.getSessionRandomExtractDAO();
             int index = 0;
+            // 遍历行为数据集合，并把要抽取的数据保存到mysql
             while (iterator.hasNext()) {
                 String aggrInfo = iterator.next();
-                if (randomList.contains(index)) {
+                if (randomList.contains(index)) { // 序号与随机数相同，则表示是目标数据
                     String sessionid = StringUtils.getFieldFromConcatString(aggrInfo, "\\|", Constants.FIELD_SESSION_ID);
                     SessionRandomExtract sessionRandomExtract = new SessionRandomExtract();
                     sessionRandomExtract.setTaskid(taskid);
@@ -446,12 +460,35 @@ public class UserVisitSessionAnalyseSpark {
                     sessionRandomExtract.setSearchKeywords(StringUtils.getFieldFromConcatString(aggrInfo, "\\|", Constants.FIELD_SEARCH_KEYWORDS));
                     sessionRandomExtract.setClickCategoryIds(StringUtils.getFieldFromConcatString(aggrInfo, "\\|", Constants.FIELD_CLICK_CATEGORY_IDS));
                     randomExtractDAO.insert(sessionRandomExtract);
-
+                    // 把sessionid 作为后面要有的索引返回
                     extractSessions.add(new Tuple2<>(sessionid, sessionid));
                 }
                 index ++;
             }
             return extractSessions.iterator();
+        });
+        // 获取明细数据
+        JavaPairRDD<String, Tuple2<String, Row>> extractSessionDetailRDD = extractSessionsRDD.join(sessionid2actionRDD);
+        extractSessionDetailRDD.foreach(tuple -> {
+            Row row = tuple._2._2;
+            SessionDetail sessionDetail = new SessionDetail();
+            sessionDetail.setTaskid(taskid);
+            sessionDetail.setUserid(row.getLong(1));
+            sessionDetail.setSessionid(row.getString(2));
+            sessionDetail.setPageid(row.getLong(3));
+            sessionDetail.setActionTime(row.getString(4));
+            sessionDetail.setSearchKeyword(row.getString(5));
+            if (row.get(6) == null) sessionDetail.setClickCategoryId(null);
+            else sessionDetail.setClickCategoryId(row.getLong(6)); // TODO:为什么这里的long直接获取总是报空指针异常？
+            if (row.get(7) == null) sessionDetail.setClickProductId(null);
+            else sessionDetail.setClickProductId(Long.valueOf(row.getString(7)));
+            sessionDetail.setOrderCategoryIds(row.getString(8));
+            sessionDetail.setOrderProductIds(row.getString(9));
+            sessionDetail.setPayCategoryIds(row.getString(10));
+            sessionDetail.setPayProductIds(row.getString(11));
+
+            ISessionDetailDAO detailDAO = DAOFactory.getSessionDetailDAO();
+            detailDAO.insert(sessionDetail);
         });
     }
 }

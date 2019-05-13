@@ -7,7 +7,7 @@ import cn.fancychuan.jdbc.JDBCHelper;
 public class SessionRandomExtractImpl implements ISessionRandomExtractDAO {
     @Override
     public void insert(SessionRandomExtract sessionRandomExtract) {
-        String sql = "insert into session_random_extract values (?, ?, ?, ?, ?, ?)";
+        String sql = "insert into session_random_extract values (?, ?, ?, ?, ?)";
         Object[] params = new Object[]{
                 sessionRandomExtract.getTaskid(),
                 sessionRandomExtract.getSessionid(),
