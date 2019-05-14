@@ -481,7 +481,7 @@ public class UserVisitSessionAnalyseSpark {
             if (row.get(6) == null) sessionDetail.setClickCategoryId(null);
             else sessionDetail.setClickCategoryId(row.getLong(6)); // TODO:为什么这里的long直接获取总是报空指针异常？
             if (row.get(7) == null) sessionDetail.setClickProductId(null);
-            else sessionDetail.setClickProductId(Long.valueOf(row.getString(7)));
+            else sessionDetail.setClickProductId(row.getLong(7));
             sessionDetail.setOrderCategoryIds(row.getString(8));
             sessionDetail.setOrderProductIds(row.getString(9));
             sessionDetail.setPayCategoryIds(row.getString(10));
@@ -490,5 +490,43 @@ public class UserVisitSessionAnalyseSpark {
             ISessionDetailDAO detailDAO = DAOFactory.getSessionDetailDAO();
             detailDAO.insert(sessionDetail);
         });
+    }
+
+    /**
+     * 使用二次排序获取top10 品类： 包括 点击过的+下单过的+支付过的
+     */
+    private static void getTop10Category(
+            JavaPairRDD<String, String> filteredSessionid2AggrInfoRDD,
+            JavaPairRDD<String, Row> sessionid2actionRDD) {
+        JavaPairRDD<String, Row> sessionid2detailRDD = filteredSessionid2AggrInfoRDD.join(sessionid2actionRDD)
+                .mapToPair(tuple2 -> new Tuple2<>(tuple2._1, tuple2._2._2));
+        JavaPairRDD<Long, Long> categoryidRDD = sessionid2detailRDD.flatMapToPair(tuple2 -> {
+                    Row row = tuple2._2;
+
+                    List<Tuple2<Long, Long>> list = new ArrayList<>();
+
+                    Long clickCategoryId = (Long) row.get(6);
+                    if (clickCategoryId != null) {
+                        list.add(new Tuple2<>(clickCategoryId, clickCategoryId));
+                    }
+                    String orderCategoryIds = row.getString(8);
+                    if (orderCategoryIds != null) {
+                        String[] orderCategoryIdsSplited = orderCategoryIds.split(",");
+                        for (String orderCategoryId : orderCategoryIdsSplited) {
+                            list.add(new Tuple2<>(Long.valueOf(orderCategoryId), Long.valueOf(orderCategoryId)));
+                        }
+                    }
+                    String payCategoryIds = row.getString(10);
+                    if (payCategoryIds != null) {
+                        String[] payCates = payCategoryIds.split(",");
+                        for (String cateid : payCates) {
+                            list.add(new Tuple2<>(Long.valueOf(cateid), Long.valueOf(cateid)));
+                        }
+                    }
+                    return list.iterator();
+                });
+
+
+
     }
 }
