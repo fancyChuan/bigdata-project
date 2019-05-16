@@ -66,11 +66,13 @@ public class UserVisitSessionAnalyseSpark {
         System.out.println("过滤后的条数：" + filtedSession.count());
         System.out.println("自定义累加器：" + accumulator.value());
         // 把统计后的结果写入mysql
-        calculateAndWrite2Mysql(accumulator.value(), taskid);
+        // calculateAndWrite2Mysql(accumulator.value(), taskid);
         System.out.println("写入完成，准备抽取session");
         // 随机抽取session
         JavaPairRDD<String, Row> session2ActionRDD = actionRDD.mapToPair(row -> new Tuple2<>(row.getString(2), row));
-        randomExtractSession(sessionid2AggrInfoRDD, taskid, session2ActionRDD);
+        // randomExtractSession(sessionid2AggrInfoRDD, taskid, session2ActionRDD);
+        // top10品类
+        getTop10Category(filtedSession, session2ActionRDD);
         // JavaSparkContext需要关闭
         sc.close();
     }
@@ -498,6 +500,7 @@ public class UserVisitSessionAnalyseSpark {
     private static void getTop10Category(
             JavaPairRDD<String, String> filteredSessionid2AggrInfoRDD,
             JavaPairRDD<String, Row> sessionid2actionRDD) {
+        // 与行为数据关联
         JavaPairRDD<String, Row> sessionid2detailRDD = filteredSessionid2AggrInfoRDD.join(sessionid2actionRDD)
                 .mapToPair(tuple2 -> new Tuple2<>(tuple2._1, tuple2._2._2));
         JavaPairRDD<Long, Long> categoryidRDD = sessionid2detailRDD.flatMapToPair(tuple2 -> {
@@ -526,7 +529,9 @@ public class UserVisitSessionAnalyseSpark {
                     return list.iterator();
                 });
 
-
+        JavaPairRDD<String, Row> clickActionRDD = sessionid2detailRDD.filter(tuple -> Long.valueOf(tuple._2.getString(6)) != null);
+        // 计算点击、下单、支付次数
+        clickActionRDD.flatMapToPair(tuple -> )
 
     }
 }

@@ -32,4 +32,9 @@ DAO模式
     
     
 开发spark程序的注意点
-- 在算子中使用的时候，需要对变量加上final修饰 
+- 在算子中使用的时候，需要对变量加上final修饰
+
+性能调优
+- 首要是增加和分配更多的资源
+    - 需要哪些资源？ executor、cpu per executor、 memory per executor、driver memory
+-  
