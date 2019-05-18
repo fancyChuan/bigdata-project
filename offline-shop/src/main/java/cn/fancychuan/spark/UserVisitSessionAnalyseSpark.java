@@ -2,15 +2,9 @@ package cn.fancychuan.spark;
 
 import cn.fancychuan.conf.ConfigurationManager;
 import cn.fancychuan.constant.Constants;
-import cn.fancychuan.dao.ISessionAggrStatDAO;
-import cn.fancychuan.dao.ISessionDetailDAO;
-import cn.fancychuan.dao.ISessionRandomExtractDAO;
-import cn.fancychuan.dao.ITaskDAO;
+import cn.fancychuan.dao.*;
 import cn.fancychuan.dao.impl.DAOFactory;
-import cn.fancychuan.domain.SessionAggrStat;
-import cn.fancychuan.domain.SessionDetail;
-import cn.fancychuan.domain.SessionRandomExtract;
-import cn.fancychuan.domain.Task;
+import cn.fancychuan.domain.*;
 import cn.fancychuan.mock.MockData;
 import cn.fancychuan.util.*;
 import com.alibaba.fastjson.JSONObject;
@@ -72,8 +66,10 @@ public class UserVisitSessionAnalyseSpark {
         // 随机抽取session
         JavaPairRDD<String, Row> session2ActionRDD = actionRDD.mapToPair(row -> new Tuple2<>(row.getString(2), row));
         // randomExtractSession(sessionid2AggrInfoRDD, taskid, session2ActionRDD);
+        System.out.println("抽取完成，准备获取top10品类");
         // top10品类
-        getTop10Category(filtedSession, session2ActionRDD);
+        List<Tuple2<CategorySortKey, String>> top10Category = getTop10Category(taskid, filtedSession, session2ActionRDD);
+        System.out.println(top10Category);
         // JavaSparkContext需要关闭
         sc.close();
     }
@@ -498,7 +494,8 @@ public class UserVisitSessionAnalyseSpark {
     /**
      * 使用二次排序获取top10 品类： 包括 点击过的+下单过的+支付过的
      */
-    private static void getTop10Category(
+    private static List<Tuple2<CategorySortKey, String>> getTop10Category(
+            long taskid,
             JavaPairRDD<String, String> filteredSessionid2AggrInfoRDD,
             JavaPairRDD<String, Row> sessionid2actionRDD) {
         // 与行为数据关联
@@ -533,18 +530,32 @@ public class UserVisitSessionAnalyseSpark {
         // 计算每个品类的点击、下单、支付次数，为后面的join准备
         // 计算品类的点击次数， <cateId, count>
         JavaPairRDD<Long, Long> clickCategoryId2CountRDD = sessionid2detailRDD
-                .filter(tuple -> Long.valueOf(tuple._2.getString(6)) != null)
+                .filter(tuple -> tuple._2.get(6) != null)
                 .mapToPair(tuple -> new Tuple2<>(tuple._2.getLong(6), 1L))
                 .reduceByKey((x, y) -> x + y);
         // 品类的下单次数， <cateId, count>
         JavaPairRDD<Long, Long> orderCategoryId2CountRDD = sessionid2detailRDD
-                .filter(tuple -> Long.valueOf(tuple._2.getString(8)) != null)
-                .mapToPair(tuple -> new Tuple2<>(tuple._2.getLong(8), 1L))
+                .filter(tuple -> tuple._2.get(8) != null)
+                .flatMapToPair(tuple -> {
+                    List<Tuple2<Long, Long>> list = new ArrayList<Tuple2<Long, Long>>();
+                    String[] ids = tuple._2.getString(8).split(",");
+                    for (String id : ids) {
+                        list.add(new Tuple2<>(Long.valueOf(id), 1L));
+                    }
+                    return list.iterator();
+                })
                 .reduceByKey((x, y) -> x + y);
         // 支付次数
         JavaPairRDD<Long, Long> payCategoryId2CountRDD = sessionid2detailRDD
-                .filter(tuple -> Long.valueOf(tuple._2.getString(10)) != null)
-                .mapToPair(tuple -> new Tuple2<>(tuple._2.getLong(10), 1L))
+                .filter(tuple -> tuple._2.get(10) != null)
+                .flatMapToPair(tuple -> {
+                    List<Tuple2<Long, Long>> list = new ArrayList<Tuple2<Long, Long>>();
+                    String[] ids = tuple._2.getString(10).split(",");
+                    for (String id : ids) {
+                        list.add(new Tuple2<>(Long.valueOf(id), 1L));
+                    }
+                    return list.iterator();
+                })
                 .reduceByKey((x, y) -> x + y);
         // 把品类的统计指标组合
         JavaPairRDD<Long, String> categoryid2countRDD = categoryidRDD
@@ -582,14 +593,36 @@ public class UserVisitSessionAnalyseSpark {
                     value = value + "|" + Constants.FIELD_PAY_COUNT + "=" + payClick;
                     return new Tuple2<>(sessionId, value);
                 });
-        JavaPairRDD<Long, CategorySortKey> sortKey2countRDD = categoryid2countRDD.mapToPair(tuple -> {
+        // 使用自定义二次排序
+        JavaPairRDD<CategorySortKey, String> sortKey2countRDD = categoryid2countRDD.mapToPair(tuple -> {
             Long sessionId = tuple._1;
             String countInfo = tuple._2;
             long clickCount = Long.valueOf(StringUtils.getFieldFromConcatString(countInfo, "\\|", Constants.FIELD_CLICK_COUNT));
             long orderCount = Long.valueOf(StringUtils.getFieldFromConcatString(countInfo, "\\|", Constants.FIELD_ORDER_COUNT));
             long payCount = Long.valueOf(StringUtils.getFieldFromConcatString(countInfo, "\\|", Constants.FIELD_PAY_COUNT));
-            return new Tuple2<>(sessionId, new CategorySortKey(clickCount, orderCount, payCount));
+            return new Tuple2<>(new CategorySortKey(clickCount, orderCount, payCount), countInfo);
         });
-        JavaPairRDD<Long, CategorySortKey> sortedCategoryCountRDD = sortKey2countRDD.sortByKey(false);
+        JavaPairRDD<CategorySortKey, String> sortedCategoryCountRDD = sortKey2countRDD.sortByKey(false);
+
+        // 获取前10的品类，并写入mysql
+        ITop10CategoryDAO top10CategoryDAO = DAOFactory.getTop10CategoryDAO();
+        List<Tuple2<CategorySortKey, String>> top10CategoryList = sortedCategoryCountRDD.take(10);
+        top10CategoryList.forEach(item -> {
+            String countInfo = item._2;
+            long categoryId = Long.valueOf(StringUtils.getFieldFromConcatString(countInfo, "\\|", Constants.FIELD_CATEGORY_ID));
+            long clickCount = Long.valueOf(StringUtils.getFieldFromConcatString(countInfo, "\\|", Constants.FIELD_CLICK_COUNT));
+            long orderCount = Long.valueOf(StringUtils.getFieldFromConcatString(countInfo, "\\|", Constants.FIELD_ORDER_COUNT));
+            long payCount = Long.valueOf(StringUtils.getFieldFromConcatString(countInfo, "\\|", Constants.FIELD_PAY_COUNT));
+
+            Top10Category category = new Top10Category();
+            category.setTaskid(taskid);
+            category.setCategoryid(categoryId);
+            category.setClickCount(clickCount);
+            category.setOrderCount(orderCount);
+            category.setPayCount(payCount);
+            top10CategoryDAO.insert(category);
+        });
+
+        return top10CategoryList;
     }
 }
