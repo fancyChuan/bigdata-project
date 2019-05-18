@@ -4,6 +4,9 @@ import scala.math.Ordered;
 
 import java.io.Serializable;
 
+/**
+ * 自定义二次排序
+ */
 public class CategorySortKey implements Ordered<CategorySortKey>, Serializable {
 
     private long clickCount;

@@ -1,9 +1,6 @@
 package cn.fancychuan.dao.impl;
 
-import cn.fancychuan.dao.ISessionAggrStatDAO;
-import cn.fancychuan.dao.ISessionDetailDAO;
-import cn.fancychuan.dao.ISessionRandomExtractDAO;
-import cn.fancychuan.dao.ITaskDAO;
+import cn.fancychuan.dao.*;
 
 /**
  * DAO工厂类
@@ -23,5 +20,9 @@ public class DAOFactory {
 
     public static ISessionDetailDAO getSessionDetailDAO() {
         return new SessionDetailImpl();
+    }
+
+    public static ITop10CategoryDAO getTop10CategoryDAO() {
+        return new Top10CategoryDAOImpl();
     }
 }
