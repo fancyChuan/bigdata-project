@@ -582,6 +582,14 @@ public class UserVisitSessionAnalyseSpark {
                     value = value + "|" + Constants.FIELD_PAY_COUNT + "=" + payClick;
                     return new Tuple2<>(sessionId, value);
                 });
-
+        JavaPairRDD<Long, CategorySortKey> sortKey2countRDD = categoryid2countRDD.mapToPair(tuple -> {
+            Long sessionId = tuple._1;
+            String countInfo = tuple._2;
+            long clickCount = Long.valueOf(StringUtils.getFieldFromConcatString(countInfo, "\\|", Constants.FIELD_CLICK_COUNT));
+            long orderCount = Long.valueOf(StringUtils.getFieldFromConcatString(countInfo, "\\|", Constants.FIELD_ORDER_COUNT));
+            long payCount = Long.valueOf(StringUtils.getFieldFromConcatString(countInfo, "\\|", Constants.FIELD_PAY_COUNT));
+            return new Tuple2<>(sessionId, new CategorySortKey(clickCount, orderCount, payCount));
+        });
+        JavaPairRDD<Long, CategorySortKey> sortedCategoryCountRDD = sortKey2countRDD.sortByKey(false);
     }
 }
