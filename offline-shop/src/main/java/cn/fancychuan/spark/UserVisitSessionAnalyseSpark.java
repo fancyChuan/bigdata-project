@@ -20,6 +20,7 @@ import org.apache.spark.SparkContext;
 import org.apache.spark.api.java.JavaPairRDD;
 import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
+import org.apache.spark.api.java.Optional;
 import org.apache.spark.api.java.function.PairFunction;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
@@ -545,7 +546,42 @@ public class UserVisitSessionAnalyseSpark {
                 .filter(tuple -> Long.valueOf(tuple._2.getString(10)) != null)
                 .mapToPair(tuple -> new Tuple2<>(tuple._2.getLong(10), 1L))
                 .reduceByKey((x, y) -> x + y);
-
+        // 把品类的统计指标组合
+        JavaPairRDD<Long, String> categoryid2countRDD = categoryidRDD
+                // 跟点击计数合并
+                .leftOuterJoin(clickCategoryId2CountRDD).mapToPair(tuple -> {
+                    Long sessiongId = tuple._1;
+                    Long clickCount = 0L;
+                    Optional<Long> optional = tuple._2._2;
+                    if (optional.isPresent()) {
+                        clickCount = optional.get();
+                    }
+                    String value = Constants.FIELD_CATEGORY_ID + "=" + sessiongId + "|"
+                            + Constants.FIELD_CLICK_COUNT + "=" + clickCount;
+                    return new Tuple2<>(sessiongId, value);
+                // 跟下单计数合并
+                }).leftOuterJoin(orderCategoryId2CountRDD).mapToPair(tuple -> {
+                    Long sessionId = tuple._1;
+                    String value = tuple._2._1;
+                    Optional<Long> optional = tuple._2._2;
+                    Long orderClick = 0L;
+                    if (optional.isPresent()) {
+                        orderClick = optional.get();
+                    }
+                    value = value + "|" + Constants.FIELD_ORDER_COUNT + "=" + orderClick;
+                    return new Tuple2<>(sessionId, value);
+                // 跟支付计数合并
+                }).leftOuterJoin(payCategoryId2CountRDD).mapToPair(tuple -> {
+                    Long sessionId = tuple._1;
+                    String value = tuple._2._1;
+                    Optional<Long> optional = tuple._2._2;
+                    Long payClick = 0L;
+                    if (optional.isPresent()) {
+                        payClick = optional.get();
+                    }
+                    value = value + "|" + Constants.FIELD_PAY_COUNT + "=" + payClick;
+                    return new Tuple2<>(sessionId, value);
+                });
 
     }
 }
