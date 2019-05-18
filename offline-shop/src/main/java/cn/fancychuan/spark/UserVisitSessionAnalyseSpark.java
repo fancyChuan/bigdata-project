@@ -528,10 +528,24 @@ public class UserVisitSessionAnalyseSpark {
                     }
                     return list.iterator();
                 });
+        categoryidRDD = categoryidRDD.distinct();
+        // 计算每个品类的点击、下单、支付次数，为后面的join准备
+        // 计算品类的点击次数， <cateId, count>
+        JavaPairRDD<Long, Long> clickCategoryId2CountRDD = sessionid2detailRDD
+                .filter(tuple -> Long.valueOf(tuple._2.getString(6)) != null)
+                .mapToPair(tuple -> new Tuple2<>(tuple._2.getLong(6), 1L))
+                .reduceByKey((x, y) -> x + y);
+        // 品类的下单次数， <cateId, count>
+        JavaPairRDD<Long, Long> orderCategoryId2CountRDD = sessionid2detailRDD
+                .filter(tuple -> Long.valueOf(tuple._2.getString(8)) != null)
+                .mapToPair(tuple -> new Tuple2<>(tuple._2.getLong(8), 1L))
+                .reduceByKey((x, y) -> x + y);
+        // 支付次数
+        JavaPairRDD<Long, Long> payCategoryId2CountRDD = sessionid2detailRDD
+                .filter(tuple -> Long.valueOf(tuple._2.getString(10)) != null)
+                .mapToPair(tuple -> new Tuple2<>(tuple._2.getLong(10), 1L))
+                .reduceByKey((x, y) -> x + y);
 
-        JavaPairRDD<String, Row> clickActionRDD = sessionid2detailRDD.filter(tuple -> Long.valueOf(tuple._2.getString(6)) != null);
-        // 计算点击、下单、支付次数
-        clickActionRDD.flatMapToPair(tuple -> )
 
     }
 }
