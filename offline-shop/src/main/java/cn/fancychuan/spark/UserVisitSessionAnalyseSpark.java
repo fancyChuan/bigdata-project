@@ -69,13 +69,13 @@ public class UserVisitSessionAnalyseSpark {
         JavaPairRDD<String, Row> sessionid2detailRDD = filtedSession.join(sessionid2actionRDD)
                 .mapToPair(tuple2 -> new Tuple2<>(tuple2._1, tuple2._2._2));
         // 随机抽取session
-        randomExtractSession(sessionid2AggrInfoRDD, taskid, sessionid2actionRDD);
+        // randomExtractSession(sessionid2AggrInfoRDD, taskid, sessionid2actionRDD);
         System.out.println("抽取完成，准备获取top10品类");
         // top10品类
         List<Tuple2<CategorySortKey, String>> top10Category = getTop10Category(taskid, sessionid2detailRDD);
         System.out.println(top10Category);
         // top10热门session
-        // getTop10Session(taskid, top10Category, sessioni)
+        getTop10Session(sc, taskid, top10Category, sessionid2detailRDD);
         // JavaSparkContext需要关闭
         sc.close();
     }
@@ -628,4 +628,21 @@ public class UserVisitSessionAnalyseSpark {
 
         return top10CategoryList;
     }
+
+
+    private static void getTop10Session(
+            JavaSparkContext sc,
+            long taskid,
+            List<Tuple2<CategorySortKey, String>> top10CategoryList,
+            JavaPairRDD<String, Row> sessionid2detailRDD) {
+        // 第1步： top10品类ID转为一个RDD
+        ArrayList<Tuple2<Long, Long>> top10CategoryIdList = new ArrayList<>();
+        for (Tuple2<CategorySortKey, String> category : top10CategoryList) {
+            Long categoryId = Long.valueOf(StringUtils.getFieldFromConcatString(category._2, "\\|", Constants.FIELD_CATEGORY_ID));
+            top10CategoryIdList.add(new Tuple2<>(categoryId, categoryId));
+        }
+        JavaPairRDD<Long, Long> top10CategoryIdRDD = sc.parallelizePairs(top10CategoryIdList);
+        // 第2步：
+    }
+
 }
