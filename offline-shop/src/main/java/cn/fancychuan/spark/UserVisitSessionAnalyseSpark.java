@@ -75,6 +75,7 @@ public class UserVisitSessionAnalyseSpark {
         List<Tuple2<CategorySortKey, String>> top10Category = getTop10Category(taskid, sessionid2detailRDD);
         System.out.println(top10Category);
         // top10热门session
+        System.out.println("准备获取热门session");
         getTop10Session(sc, taskid, top10Category, sessionid2detailRDD);
         // JavaSparkContext需要关闭
         sc.close();
@@ -476,24 +477,7 @@ public class UserVisitSessionAnalyseSpark {
         JavaPairRDD<String, Tuple2<String, Row>> extractSessionDetailRDD = extractSessionsRDD.join(sessionid2actionRDD);
         extractSessionDetailRDD.foreach(tuple -> {
             Row row = tuple._2._2;
-            SessionDetail sessionDetail = new SessionDetail();
-            sessionDetail.setTaskid(taskid);
-            sessionDetail.setUserid(row.getLong(1));
-            sessionDetail.setSessionid(row.getString(2));
-            sessionDetail.setPageid(row.getLong(3));
-            sessionDetail.setActionTime(row.getString(4));
-            sessionDetail.setSearchKeyword(row.getString(5));
-            if (row.get(6) == null) sessionDetail.setClickCategoryId(null);
-            else sessionDetail.setClickCategoryId(row.getLong(6)); // TODO:为什么这里的long直接获取总是报空指针异常？
-            if (row.get(7) == null) sessionDetail.setClickProductId(null);
-            else sessionDetail.setClickProductId(row.getLong(7));
-            sessionDetail.setOrderCategoryIds(row.getString(8));
-            sessionDetail.setOrderProductIds(row.getString(9));
-            sessionDetail.setPayCategoryIds(row.getString(10));
-            sessionDetail.setPayProductIds(row.getString(11));
-
-            ISessionDetailDAO detailDAO = DAOFactory.getSessionDetailDAO();
-            detailDAO.insert(sessionDetail);
+            insertSessionDetail2Mysql(row, taskid);
         });
     }
 
@@ -629,7 +613,9 @@ public class UserVisitSessionAnalyseSpark {
         return top10CategoryList;
     }
 
-
+    /**
+     * 获取top10品类对应的热门session：1.把session对品类的点击情况存入 2.把热门session明细存到mysql
+     */
     private static void getTop10Session(
             JavaSparkContext sc,
             long taskid,
@@ -707,19 +693,21 @@ public class UserVisitSessionAnalyseSpark {
                     ArrayList<Tuple2<String, String>> top10SessionList = new ArrayList<>();
 
                     for (String sessionCount : top10Sessions) {
-                        String sessionId = sessionCount.split(",")[0];
-                        Long count = Long.valueOf(sessionCount.split(",")[1]);
-                        // 封装到domain
-                        Top10Session top10Session = new Top10Session();
-                        top10Session.setTaskid(taskid);
-                        top10Session.setCategoryid(categoryId);
-                        top10Session.setSessionid(sessionId);
-                        top10Session.setClickCount(count);
+                        if (sessionCount != null) { // 有可能并没有top10
+                            String sessionId = sessionCount.split(",")[0];
+                            Long count = Long.valueOf(sessionCount.split(",")[1]);
+                            // 封装到domain
+                            Top10Session top10Session = new Top10Session();
+                            top10Session.setTaskid(taskid);
+                            top10Session.setCategoryid(categoryId);
+                            top10Session.setSessionid(sessionId);
+                            top10Session.setClickCount(count);
 
-                        ITop10SessionDAO top10SessionDAO = DAOFactory.getTop10SessionDAO();
-                        top10SessionDAO.insert(top10Session);
-                        // 存完mysql之后把session组装成Tuple2返回
-                        top10SessionList.add(new Tuple2<>(sessionId, sessionId));
+                            ITop10SessionDAO top10SessionDAO = DAOFactory.getTop10SessionDAO();
+                            top10SessionDAO.insert(top10Session);
+                            // 存完mysql之后把session组装成Tuple2返回
+                            top10SessionList.add(new Tuple2<>(sessionId, sessionId));
+                        }
                     }
                     // 把找到的session返回
                     return top10SessionList.iterator();
@@ -728,25 +716,29 @@ public class UserVisitSessionAnalyseSpark {
         JavaPairRDD<String, Tuple2<String, Row>> sessionDetailRDD = top10SessionRDD.join(sessionid2detailRDD);
         sessionDetailRDD.foreach(tuple -> {
             Row row = tuple._2._2;
-
-            SessionDetail sessionDetail = new SessionDetail();
-            sessionDetail.setTaskid(taskid);
-            sessionDetail.setUserid(row.getLong(1));
-            sessionDetail.setSessionid(row.getString(2));
-            sessionDetail.setPageid(row.getLong(3));
-            sessionDetail.setActionTime(row.getString(4));
-            sessionDetail.setSearchKeyword(row.getString(5));
-            sessionDetail.setClickCategoryId(row.getLong(6));
-            sessionDetail.setClickProductId(row.getLong(7));
-            sessionDetail.setOrderCategoryIds(row.getString(8));
-            sessionDetail.setOrderProductIds(row.getString(9));
-            sessionDetail.setPayCategoryIds(row.getString(10));
-            sessionDetail.setPayProductIds(row.getString(11));
-
-            ISessionDetailDAO sessionDetailDAO = DAOFactory.getSessionDetailDAO();
-            sessionDetailDAO.insert(sessionDetail);
+            insertSessionDetail2Mysql(row, taskid);
         });
 
     }
 
+    private static void insertSessionDetail2Mysql(Row row, long taskid) {
+        SessionDetail sessionDetail = new SessionDetail();
+        sessionDetail.setTaskid(taskid);
+        sessionDetail.setUserid(row.getLong(1));
+        sessionDetail.setSessionid(row.getString(2));
+        sessionDetail.setPageid(row.getLong(3));
+        sessionDetail.setActionTime(row.getString(4));
+        sessionDetail.setSearchKeyword(row.getString(5));
+        if (row.get(6) == null) sessionDetail.setClickCategoryId(null);
+        else sessionDetail.setClickCategoryId(row.getLong(6)); // TODO:为什么这里的long直接获取总是报空指针异常？
+        if (row.get(7) == null) sessionDetail.setClickProductId(null);
+        else sessionDetail.setClickProductId(row.getLong(7));
+        sessionDetail.setOrderCategoryIds(row.getString(8));
+        sessionDetail.setOrderProductIds(row.getString(9));
+        sessionDetail.setPayCategoryIds(row.getString(10));
+        sessionDetail.setPayProductIds(row.getString(11));
+
+        ISessionDetailDAO detailDAO = DAOFactory.getSessionDetailDAO();
+        detailDAO.insert(sessionDetail);
+    }
 }
