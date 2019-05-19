@@ -676,11 +676,11 @@ public class UserVisitSessionAnalyseSpark {
         JavaPairRDD<Long, String> top10CategorySessionCountRDD = top10CategoryIdRDD.join(categoryid2sessionCountRDD)
                 .mapToPair(tuple -> new Tuple2<>(tuple._1, tuple._2._2));
         // 第3步：分组取top10活跃用户，也就是session的点击是最多的那10个，并按照 [(cateA, top1, count),(cateA, top2, count)]存到mysql
-        top10CategorySessionCountRDD.groupByKey() // 这里GroupBy是因为flatMapToPair(func) 的结果是可能包含重复key的，虽然单个func下返回的list不会有重复的key
+        JavaPairRDD<String, String> top10SessionRDD = top10CategorySessionCountRDD.groupByKey() // 这里GroupBy是因为flatMapToPair(func) 的结果是可能包含重复key的，虽然单个func下返回的list不会有重复的key
                 .flatMapToPair(tuple -> { // 这里使用flatMapToPair是为了后面把热门session对应的明细存入mysql
                     Long categoryId = tuple._1;
                     Iterator<String> iterator = tuple._2.iterator();
-                    //
+                    // 使用冒泡排序找出top10Session
                     String[] top10Sessions = new String[10];
                     while (iterator.hasNext()) {
                         String sessionCount = iterator.next();
@@ -693,8 +693,8 @@ public class UserVisitSessionAnalyseSpark {
                                 // 冒泡排序法，边前10个边填充边排序
                                 long _count = Long.valueOf(top10Sessions[i].split(",")[1]);
                                 if (count >= _count) { // 大的就插入，并把数组后面的元素全部往后挪一位
-                                    for (int j=9; j>i; j--) {
-                                        top10Sessions[j] = top10Sessions[j-1];
+                                    for (int j = 9; j > i; j--) {
+                                        top10Sessions[j] = top10Sessions[j - 1];
                                     }
                                     top10Sessions[i] = sessionCount;
                                     break;
@@ -703,7 +703,27 @@ public class UserVisitSessionAnalyseSpark {
                             // 比数组中元素都要小的，则忽略
                         }
                     }
-                })
+                    // 把找出来的热门session写入mysql，并返回sessionID，以便后续保存session的明细
+                    ArrayList<Tuple2<String, String>> top10SessionList = new ArrayList<>();
+
+                    for (String sessionCount : top10Sessions) {
+                        String sessionId = sessionCount.split(",")[0];
+                        Long count = Long.valueOf(sessionCount.split(",")[1]);
+                        // 封装到domain
+                        Top10Session top10Session = new Top10Session();
+                        top10Session.setTaskid(taskid);
+                        top10Session.setCategoryid(categoryId);
+                        top10Session.setSessionid(sessionId);
+                        top10Session.setClickCount(count);
+
+                        ITop10SessionDAO top10SessionDAO = DAOFactory.getTop10SessionDAO();
+                        top10SessionDAO.insert(top10Session);
+                        // 存完mysql之后把session组装成Tuple2返回
+                        top10SessionList.add(new Tuple2<>(sessionId, sessionId));
+                    }
+                    // 把找到的session返回
+                    return top10SessionList.iterator();
+                });
     }
 
 }
