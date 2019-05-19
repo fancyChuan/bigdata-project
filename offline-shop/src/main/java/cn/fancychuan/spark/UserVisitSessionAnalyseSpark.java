@@ -642,7 +642,39 @@ public class UserVisitSessionAnalyseSpark {
             top10CategoryIdList.add(new Tuple2<>(categoryId, categoryId));
         }
         JavaPairRDD<Long, Long> top10CategoryIdRDD = sc.parallelizePairs(top10CategoryIdList);
-        // 第2步：
+        // 第2步：1. 计算各个session下点击品类的情况，结果应为： <cateid, sessionid1=count1|sessionid2=count2>
+        JavaPairRDD<Long, String> categoryid2sessionCountRDD = sessionid2detailRDD.groupByKey()
+                .flatMapToPair(tuple -> {
+                    String sessionId = tuple._1;
+                    Iterator<Row> iterator = tuple._2.iterator();
+                    // 遍历统计每个session下品类的点击情况
+                    HashMap<Long, Long> categoryCountMap = new HashMap<>();
+                    while (iterator.hasNext()) {
+                        Row row = iterator.next();
+                        if (row.get(6) != null) {
+                            long categoryId = row.getLong(6);
+                            Long count = categoryCountMap.get(categoryId);
+                            if (count == null) {
+                                count = 0L;
+                            }
+                            count += 1;
+                            categoryCountMap.put(categoryId, count);
+                        }
+                    }
+                    // 遍历统计出来的点击情况，按照品类-session点击数的形式返回，也就是：<cateid, sessionid1=count1|sessionid2=count2>
+                    ArrayList<Tuple2<Long, String>> cateSessCountList = new ArrayList<>();
+                    for (Map.Entry<Long, Long> entry : categoryCountMap.entrySet()) {
+                        Long categoryId = entry.getKey();
+                        Long count = entry.getValue();
+                        String value = sessionId + "," + count;
+                        cateSessCountList.add(new Tuple2<>(categoryId, value));
+                    }
+                    return cateSessCountList.iterator();
+                });
+        // 2. 跟top10品类关联，过滤出热门session，结果： <cateid, sessionid1=count1|sessionid2=count2>
+        JavaPairRDD<Long, String> top10CategorySessionCountRDD = top10CategoryIdRDD.join(categoryid2sessionCountRDD)
+                .mapToPair(tuple -> new Tuple2<>(tuple._1, tuple._2._2));
+
     }
 
 }
