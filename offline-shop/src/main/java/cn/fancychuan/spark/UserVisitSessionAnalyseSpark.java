@@ -642,7 +642,7 @@ public class UserVisitSessionAnalyseSpark {
             top10CategoryIdList.add(new Tuple2<>(categoryId, categoryId));
         }
         JavaPairRDD<Long, Long> top10CategoryIdRDD = sc.parallelizePairs(top10CategoryIdList);
-        // 第2步：1. 计算各个session下点击品类的情况，结果应为： <cateid, sessionid1=count1|sessionid2=count2>
+        // 第2步：1. 计算各个session下点击品类的情况，结果应为： [<cateidA, sessionid1=count1> <cateidA, sessionid2=count2>, ...]
         JavaPairRDD<Long, String> categoryid2sessionCountRDD = sessionid2detailRDD.groupByKey()
                 .flatMapToPair(tuple -> {
                     String sessionId = tuple._1;
@@ -661,7 +661,7 @@ public class UserVisitSessionAnalyseSpark {
                             categoryCountMap.put(categoryId, count);
                         }
                     }
-                    // 遍历统计出来的点击情况，按照品类-session点击数的形式返回，也就是：<cateid, sessionid1=count1|sessionid2=count2>
+                    // 遍历统计出来的点击情况，按照品类-session点击数的形式返回，也就是：[<cateidA, sessionid1=count1> <cateidA, sessionid2=count2>, ...]
                     ArrayList<Tuple2<Long, String>> cateSessCountList = new ArrayList<>();
                     for (Map.Entry<Long, Long> entry : categoryCountMap.entrySet()) {
                         Long categoryId = entry.getKey();
@@ -670,11 +670,40 @@ public class UserVisitSessionAnalyseSpark {
                         cateSessCountList.add(new Tuple2<>(categoryId, value));
                     }
                     return cateSessCountList.iterator();
+                    // 这里还有另外一种方法：把最终结果表示为 <cateidA, sessionid1=count1|sessionid2=count2>，这样后面就不需要groupByKey()了
                 });
-        // 2. 跟top10品类关联，过滤出热门session，结果： <cateid, sessionid1=count1|sessionid2=count2>
+        // 2. 跟top10品类关联，过滤出热门session，结果： [<cateidA, sessionid1=count1> <cateidA, sessionid2=count2>, ...]
         JavaPairRDD<Long, String> top10CategorySessionCountRDD = top10CategoryIdRDD.join(categoryid2sessionCountRDD)
                 .mapToPair(tuple -> new Tuple2<>(tuple._1, tuple._2._2));
-
+        // 第3步：分组取top10活跃用户，也就是session的点击是最多的那10个，并按照 [(cateA, top1, count),(cateA, top2, count)]存到mysql
+        top10CategorySessionCountRDD.groupByKey() // 这里GroupBy是因为flatMapToPair(func) 的结果是可能包含重复key的，虽然单个func下返回的list不会有重复的key
+                .flatMapToPair(tuple -> { // 这里使用flatMapToPair是为了后面把热门session对应的明细存入mysql
+                    Long categoryId = tuple._1;
+                    Iterator<String> iterator = tuple._2.iterator();
+                    //
+                    String[] top10Sessions = new String[10];
+                    while (iterator.hasNext()) {
+                        String sessionCount = iterator.next();
+                        long count = Long.valueOf(sessionCount.split(",")[1]);
+                        for (int i = 0; i < top10Sessions.length; i++) {
+                            if (top10Sessions[i] == null) { // 前10个元素把数组填充满
+                                top10Sessions[i] = sessionCount;
+                                break;
+                            } else {
+                                // 冒泡排序法，边前10个边填充边排序
+                                long _count = Long.valueOf(top10Sessions[i].split(",")[1]);
+                                if (count >= _count) { // 大的就插入，并把数组后面的元素全部往后挪一位
+                                    for (int j=9; j>i; j--) {
+                                        top10Sessions[j] = top10Sessions[j-1];
+                                    }
+                                    top10Sessions[i] = sessionCount;
+                                    break;
+                                }
+                            }
+                            // 比数组中元素都要小的，则忽略
+                        }
+                    }
+                })
     }
 
 }
