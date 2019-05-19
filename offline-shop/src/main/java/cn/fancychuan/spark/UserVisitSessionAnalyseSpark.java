@@ -63,13 +63,19 @@ public class UserVisitSessionAnalyseSpark {
         // 把统计后的结果写入mysql
         // calculateAndWrite2Mysql(accumulator.value(), taskid);
         System.out.println("写入完成，准备抽取session");
+        // 先得到 <sessionid, actionRow>
+        JavaPairRDD<String, Row> sessionid2actionRDD = actionRDD.mapToPair(row -> new Tuple2<>(row.getString(2), row));
+        // 过滤后的数据与行为数据关联，生成明细RDD
+        JavaPairRDD<String, Row> sessionid2detailRDD = filtedSession.join(sessionid2actionRDD)
+                .mapToPair(tuple2 -> new Tuple2<>(tuple2._1, tuple2._2._2));
         // 随机抽取session
-        JavaPairRDD<String, Row> session2ActionRDD = actionRDD.mapToPair(row -> new Tuple2<>(row.getString(2), row));
-        // randomExtractSession(sessionid2AggrInfoRDD, taskid, session2ActionRDD);
+        randomExtractSession(sessionid2AggrInfoRDD, taskid, sessionid2actionRDD);
         System.out.println("抽取完成，准备获取top10品类");
         // top10品类
-        List<Tuple2<CategorySortKey, String>> top10Category = getTop10Category(taskid, filtedSession, session2ActionRDD);
+        List<Tuple2<CategorySortKey, String>> top10Category = getTop10Category(taskid, sessionid2detailRDD);
         System.out.println(top10Category);
+        // top10热门session
+        // getTop10Session(taskid, top10Category, sessioni)
         // JavaSparkContext需要关闭
         sc.close();
     }
@@ -496,11 +502,8 @@ public class UserVisitSessionAnalyseSpark {
      */
     private static List<Tuple2<CategorySortKey, String>> getTop10Category(
             long taskid,
-            JavaPairRDD<String, String> filteredSessionid2AggrInfoRDD,
-            JavaPairRDD<String, Row> sessionid2actionRDD) {
-        // 与行为数据关联
-        JavaPairRDD<String, Row> sessionid2detailRDD = filteredSessionid2AggrInfoRDD.join(sessionid2actionRDD)
-                .mapToPair(tuple2 -> new Tuple2<>(tuple2._1, tuple2._2._2));
+            JavaPairRDD<String, Row> sessionid2detailRDD) {
+
         JavaPairRDD<Long, Long> categoryidRDD = sessionid2detailRDD.flatMapToPair(tuple2 -> {
                     Row row = tuple2._2;
 
