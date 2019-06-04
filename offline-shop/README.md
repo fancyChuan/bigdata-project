@@ -59,4 +59,8 @@ spark-submit \
             - task数量至少设置成与总cpu核心数量相同（理想情况下，每个task差不多在同一时间完成）
             - 官方推荐：task数量设置成application总cpu核心数量的2-3倍
         - 设置方法: conf.set("spark.default.parallelism", 500) 
--  
+- 对RDD的优化
+    - 重构RDD，尽可能重用RDD：把差不多的RDD抽象到一起
+    - 公共的RDD持久化
+        - 内存+磁盘+序列化
+        - 为了数据的高可靠行，可以考虑RDD的双副本机制持久化，一个副本丢了，可以从了一个副部获取，避免重复计算（内存充足时可以考虑使用）
