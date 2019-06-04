@@ -35,6 +35,20 @@ DAO模式
 - 在算子中使用的时候，需要对变量加上final修饰
 
 性能调优
+```
+spark-submit \
+--class cn.fancychuan.offline-shop.core.WordCount \
+--num-executor 3 \
+--driver-memory 100m \
+--executor-memory 100m \
+--executor-cores 3 \
+/path/to/xxxxx.jar
+```
 - 首要是增加和分配更多的资源
     - 需要哪些资源？ executor、cpu per executor、 memory per executor、driver memory
+        - 比如有3个executor，每个executor都有2个cpu核心，那么一次能够同时执行6个task
+        - 增加内存带来性能的提升有两点：
+            - 可以缓存更多的对象，减少数据写入磁盘甚至不写入磁盘
+            - 可以创建更多的对象，避免JVM频繁的GC，垃圾回收
+            - （对于shuffle操作，需要内存进行聚合，内存不够也会写入磁盘）
 -  
