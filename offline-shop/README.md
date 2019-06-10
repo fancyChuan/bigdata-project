@@ -64,3 +64,14 @@ spark-submit \
     - 公共的RDD持久化
         - 内存+磁盘+序列化
         - 为了数据的高可靠行，可以考虑RDD的双副本机制持久化，一个副本丢了，可以从了一个副部获取，避免重复计算（内存充足时可以考虑使用）
+- 广播大变量
+    - task执行的算子中，如果使用了外部变量，那么每个task都会获取一份这个变量的副本，而获取是通过网络传输的（100M的变量，1000个task，瞬间就需要占用10G的内存）
+    - 大变量可能带来的影响
+        - 占用网络带宽
+        - 占用内存，可能导致需要持久化到内存的RDD在持久化时内存不足，只能写入磁盘，从而导致磁盘IO上性能的消耗
+    - 广播变量相关细节
+        - 广播变量在driver中会有一份初始副本
+        - BlockManager负责管理Executor对应的内存和磁盘上的数据
+        - task首先会在BlockManager找变量，找不到就会去driver中拉取变量，然后交由BlockManager管理，那么后面另一个task来获取的时候就直接从本地BlockManager取
+        - 另外，BlockManager可能会从远程的Driver获取变量，也可能从距离比较近的其他节点的Executor的BlockManager上获取
+    - 也就是说，广播变量只会在每个Executor保存一个副本，那么这个Executor上的多个task都不需要再去获取这个变量，直接从Executor的BlockManager获取
