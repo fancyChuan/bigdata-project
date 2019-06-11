@@ -75,3 +75,13 @@ spark-submit \
         - task首先会在BlockManager找变量，找不到就会去driver中拉取变量，然后交由BlockManager管理，那么后面另一个task来获取的时候就直接从本地BlockManager取
         - 另外，BlockManager可能会从远程的Driver获取变量，也可能从距离比较近的其他节点的Executor的BlockManager上获取
     - 也就是说，广播变量只会在每个Executor保存一个副本，那么这个Executor上的多个task都不需要再去获取这个变量，直接从Executor的BlockManager获取
+- 使用Kryo序列化
+    - 默认的序列化机制效率不高：速度慢，序列化以后的数据占用内存较多，而Kryo序列化速度快，而且序列化后的数据占用内存大概是java序列化机制的1/10
+    - 可以使用到Kryo序列化的地方：
+        - 算子函数用到的外部变量：可以优化网络传输性能、优化集群内存空间占用和消耗
+        - 持久化RDD时进行序列化，StorageLevel.MEMORY_ONLY_SER：优化内存占用和消耗，避免频繁GC
+        - shuffle：在进行stage之间task的shuffle操作时，节点间的task会通过网络进行大量的网络传输：优化网络传输性能
+    - 使用步骤
+        - set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
+        - 注册需要序列化的的自定义类
+        - （Kryo之所以没有作为默认的序列化类库，是因为Kryo要求要达到最优性能，必须要注册需要序列化的自定义类）

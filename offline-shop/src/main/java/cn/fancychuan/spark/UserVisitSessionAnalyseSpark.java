@@ -36,7 +36,10 @@ public class UserVisitSessionAnalyseSpark {
     public static void main(String[] args) {
         SparkConf conf = new SparkConf()
                 .setAppName(Constants.SPARK_APP_NAME_SESSION)
-                .setMaster("local");
+                .setMaster("local")
+                .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
+                .registerKryoClasses(new Class[]{CategorySortKey.class}) // 注册要序列化的类
+                ;
         JavaSparkContext sc = new JavaSparkContext(conf); // TODO:为什么要用这个而不是SparkContext
         SQLContext sqlContext = getSQLContext(sc.sc());
         // 生成模拟测试数据
