@@ -16,6 +16,7 @@ import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.api.java.Optional;
 import org.apache.spark.api.java.function.PairFunction;
+import org.apache.spark.broadcast.Broadcast;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SQLContext;
@@ -69,7 +70,7 @@ public class UserVisitSessionAnalyseSpark {
         JavaPairRDD<String, Row> sessionid2detailRDD = filtedSession.join(sessionid2actionRDD)
                 .mapToPair(tuple2 -> new Tuple2<>(tuple2._1, tuple2._2._2));
         // 随机抽取session
-        // randomExtractSession(sessionid2AggrInfoRDD, taskid, sessionid2actionRDD);
+        // randomExtractSession(sc, sessionid2AggrInfoRDD, taskid, sessionid2actionRDD);
         System.out.println("抽取完成，准备获取top10品类");
         // top10品类
         List<Tuple2<CategorySortKey, String>> top10Category = getTop10Category(taskid, sessionid2detailRDD);
@@ -372,7 +373,8 @@ public class UserVisitSessionAnalyseSpark {
     /**
      * 随机抽取session：按照每个小时的session占比数来分层抽样
      */
-    private static void randomExtractSession(JavaPairRDD<String, String> session2AggrInfoRDD,
+    private static void randomExtractSession(JavaSparkContext sc,
+                                             JavaPairRDD<String, String> session2AggrInfoRDD,
                                              final long taskid,
                                              JavaPairRDD<String, Row> sessionid2actionRDD) {
         JavaPairRDD<String, String> time2sessionRDD = session2AggrInfoRDD.mapToPair(tuple -> {
@@ -441,17 +443,26 @@ public class UserVisitSessionAnalyseSpark {
             }
         }
 
+        // 把大变量做成广播变量
+        final Broadcast<HashMap<String, Map<String, List<Integer>>>> dateHourExtractMapBroadcast = sc.broadcast(dateHourExtractMap);
+
         // 获取需要随机抽取的索引
         JavaPairRDD<String, Iterable<String>> time2sessionsRDD = time2sessionRDD.groupByKey();
         JavaPairRDD<String, String> extractSessionsRDD = time2sessionsRDD.flatMapToPair(tuple2 -> {
+            /**
+             * 这个flatMapToPair算子使用了外部变量dateHourExtractMap和taskid，dateHourExtractMap比较大，可以将其作为广播变量
+             * 使用广播变量的时候，通过broadcast.getValue() 或者  broadcast.value() 获取到变量
+             */
             List<Tuple2<String, String>> extractSessions = new ArrayList<>();
             String dateHour = tuple2._1;
             String date = dateHour.split("_")[0];
             String hour = dateHour.split("_")[1];
             // 聚合（小时粒度）后的行为数据的集合
             Iterator<String> iterator = tuple2._2.iterator();
+            // 先获取广播变量
+            final HashMap<String, Map<String, List<Integer>>> dateHourExtractMap2 = dateHourExtractMapBroadcast.getValue();
             // 拿到随机数（随机抽取的种子）
-            List<Integer> randomList = dateHourExtractMap.get(date).get(hour);
+            List<Integer> randomList = dateHourExtractMap2.get(date).get(hour); // 这里使用广播变量dateHourExtractMap2而不是外部变量dateHourExtractMap
             ISessionRandomExtractDAO randomExtractDAO = DAOFactory.getSessionRandomExtractDAO();
             int index = 0;
             // 遍历行为数据集合，并把要抽取的数据保存到mysql
