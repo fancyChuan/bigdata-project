@@ -21,6 +21,7 @@ import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SQLContext;
 import org.apache.spark.sql.hive.HiveContext;
+import org.apache.spark.storage.StorageLevel;
 import scala.Tuple2;
 
 
@@ -55,12 +56,15 @@ public class UserVisitSessionAnalyseSpark {
         // actionRDD是一个公共RDD，在后面需要多次使用，重构后只使用一次
         // 先得到 <sessionid, actionRow>
         JavaPairRDD<String, Row> sessionid2actionRDD = actionRDD.mapToPair(row -> new Tuple2<>(row.getString(2), row));
+        // sessionid2actionRDD后面用到2次，需要做持久化
+        sessionid2actionRDD = sessionid2actionRDD.persist(StorageLevel.MEMORY_ONLY());
         // 对行为数据按照session粒度聚合，同时获取到用户信息
         JavaPairRDD<String, String> sessionid2AggrInfoRDD = aggregateBySession(sessionid2actionRDD, sqlContext);
         // 使用自定义累加器
         Accumulator<String> accumulator = sc.accumulator("", new SessionArrgStatAccumulator());
         // 过滤掉非目标数据
         JavaPairRDD<String, String> filtedSession = filterSessionAndStat(sessionid2AggrInfoRDD, taskParam, accumulator);
+        filtedSession = filtedSession.persist(StorageLevel.MEMORY_ONLY()); // 也是用多次，持久化
         System.out.println("过滤前的条数：" + sessionid2AggrInfoRDD.count());
         for (Tuple2<String, String> tuple2 : sessionid2AggrInfoRDD.take(5)) {
             System.out.println(tuple2._1 + " : " + tuple2._2);
@@ -74,8 +78,9 @@ public class UserVisitSessionAnalyseSpark {
         // 过滤后的数据与行为数据关联，生成明细RDD
         JavaPairRDD<String, Row> sessionid2detailRDD = filtedSession.join(sessionid2actionRDD)
                 .mapToPair(tuple2 -> new Tuple2<>(tuple2._1, tuple2._2._2));
+        sessionid2detailRDD = sessionid2detailRDD.persist(StorageLevel.MEMORY_ONLY()); // 使用多次，持久化处理
         // 随机抽取session
-        // randomExtractSession(sc, sessionid2AggrInfoRDD, taskid, sessionid2actionRDD);
+        randomExtractSession(sc, filtedSession, taskid, sessionid2detailRDD);
         System.out.println("抽取完成，准备获取top10品类");
         // top10品类
         List<Tuple2<CategorySortKey, String>> top10Category = getTop10Category(taskid, sessionid2detailRDD);
