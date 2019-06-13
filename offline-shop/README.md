@@ -64,6 +64,13 @@ spark-submit \
     - 公共的RDD持久化
         - 内存+磁盘+序列化
         - 为了数据的高可靠行，可以考虑RDD的双副本机制持久化，一个副本丢了，可以从了一个副部获取，避免重复计算（内存充足时可以考虑使用）
+    - 持久化的策略
+        - StorageLevel.MEMORY_ONLY() 纯内存，无序列化，可以用cache()代替
+        - StorageLevel.MEMORY_ONLY_SER() 第二选择，内存+序列化
+        - StorageLevel.MEMORY_AND_DISK()
+        - StorageLevel.MEMORY_AND_DISK_SER()
+        - StorageLevel.DISK_ONLY()
+        - StorageLevel.MEMORY_ONLY_2() 内存充足，使用双副本高可靠机制
 - 广播大变量
     - task执行的算子中，如果使用了外部变量，那么每个task都会获取一份这个变量的副本，而获取是通过网络传输的（100M的变量，1000个task，瞬间就需要占用10G的内存）
     - 大变量可能带来的影响
