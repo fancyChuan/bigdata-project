@@ -52,8 +52,11 @@ public class UserVisitSessionAnalyseSpark {
         JSONObject taskParam = JSONObject.parseObject(task.getTaskParam());
         // 获取指定日期范围内的RDD
         JavaRDD<Row> actionRDD = getActionRDDByDateRange(sqlContext, taskParam);
+        // actionRDD是一个公共RDD，在后面需要多次使用，重构后只使用一次
+        // 先得到 <sessionid, actionRow>
+        JavaPairRDD<String, Row> sessionid2actionRDD = actionRDD.mapToPair(row -> new Tuple2<>(row.getString(2), row));
         // 对行为数据按照session粒度聚合，同时获取到用户信息
-        JavaPairRDD<String, String> sessionid2AggrInfoRDD = aggregateBySession(actionRDD, sqlContext);
+        JavaPairRDD<String, String> sessionid2AggrInfoRDD = aggregateBySession(sessionid2actionRDD, sqlContext);
         // 使用自定义累加器
         Accumulator<String> accumulator = sc.accumulator("", new SessionArrgStatAccumulator());
         // 过滤掉非目标数据
@@ -67,8 +70,7 @@ public class UserVisitSessionAnalyseSpark {
         // 把统计后的结果写入mysql
         // calculateAndWrite2Mysql(accumulator.value(), taskid);
         System.out.println("写入完成，准备抽取session");
-        // 先得到 <sessionid, actionRow>
-        JavaPairRDD<String, Row> sessionid2actionRDD = actionRDD.mapToPair(row -> new Tuple2<>(row.getString(2), row));
+
         // 过滤后的数据与行为数据关联，生成明细RDD
         JavaPairRDD<String, Row> sessionid2detailRDD = filtedSession.join(sessionid2actionRDD)
                 .mapToPair(tuple2 -> new Tuple2<>(tuple2._1, tuple2._2._2));
@@ -127,16 +129,17 @@ public class UserVisitSessionAnalyseSpark {
      *      <sessionId, actionData+userInfo>
      * 所以需要根据userid对两个RDD进行json，最后再拼接
      */
-    private static JavaPairRDD<String, String> aggregateBySession(JavaRDD<Row> actionRDD, SQLContext sqlContext) {
+//    private static JavaPairRDD<String, String> aggregateBySession(JavaRDD<Row> actionRDD, SQLContext sqlContext) {
         // 1. 先提取到sessionId作为RDD的key
-        JavaPairRDD<String, Row> sessionid2ActionRDD = actionRDD.mapToPair(new PairFunction<Row, String, Row>() {
-            private static final long serialVersionUID = 3258845628763444421L;
-
-            @Override
-            public Tuple2<String, Row> call(Row row) throws Exception {
-                return new Tuple2<>(row.getString(2), row);
-            }
-        });
+//        JavaPairRDD<String, Row> sessionid2ActionRDD = actionRDD.mapToPair(new PairFunction<Row, String, Row>() {
+//            private static final long serialVersionUID = 3258845628763444421L;
+//
+//            @Override
+//            public Tuple2<String, Row> call(Row row) throws Exception {
+//                return new Tuple2<>(row.getString(2), row);
+//            }
+//        });
+    private static JavaPairRDD<String, String> aggregateBySession(JavaPairRDD<String, Row> sessionid2ActionRDD, SQLContext sqlContext) {
         // 2. 按照sessionId汇总
         JavaPairRDD<String, Iterable<Row>> sessid2rdds = sessionid2ActionRDD.groupByKey();
         // 3. 这里对行为数据聚合拼接，结果为 <userId, actionData>
