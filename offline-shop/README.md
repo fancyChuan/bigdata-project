@@ -92,3 +92,19 @@ spark-submit \
         - set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
         - 注册需要序列化的的自定义类
         - （Kryo之所以没有作为默认的序列化类库，是因为Kryo要求要达到最优性能，必须要注册需要序列化的自定义类）
+- 调节本地化等待时长
+    - Driver在分配之前，会先计算出每个task需要计算的是哪个分片的数据，会优先把task分配到数据所在的节点上
+    - 在无法满足时，可以设置等待一定的时长（比如3秒），如果还是无法有足够的资源分配执行task，那么这个时候就回到一个相对差的节点上执行task任务，这个时候需要网络传输
+    - task获取数据一共有5种情况：
+        - PROCESS_LOCAL 进程本地化：代码和数据在同一进程（Executor）中，task在Executor中执行，数据从同个Executor的BlockManager中获取，性能最优
+        - NODE_LOCAL 节点本地化：代码和数据在同一节点的不同进程中，数据需要在进程间传输，性能次之，有两种情况
+            - 数据作为一个HDFS block块，在节点上，task在某个Executor中执行
+            - 数据在一个Executor的BlockManager中，task在同一节点的另一个Executor中执行
+        - NO_PREF：对于task来说，数据从哪里获取都一样，没有好坏之分？？
+        - RACK_LOCAL 机架本地化：数据和task在同一机架的不同节点，需要通过网络在节点间传输数据
+        - ANY：数据和task可能在集群的任何地方，并且不在同一机架，性能最差
+    - 设置方法：conf.set("spark.locality.wait",6) 默认是3秒
+        - spark.locality.wait.process
+        - spark.locality.wait.node
+        - spark.locality.wait.rack
+    - 一般先看执行日志，如果发现日志上面的本地化级别都是PROCESS_LOCAL，那就不需要调节了，如果大部分是其他级别，可以调整一下，但是要注意等待时间带来整体运行时长的增加
