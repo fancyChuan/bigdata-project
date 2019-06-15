@@ -152,5 +152,14 @@ ${1}
     
 #### 3. shuffle调优
 一般shuffle操作的性能操作会站到整个作业的50%-90%，10用来运行map操作，90%在shuffle操作上。
+##### spark shuffle相关
+- shuffle原理：
+    - 每一个shuffle前半部分stage0的task会创建跟后半部分stage1的task数量相同的文件，加入stage1有100个task，那么stage的每个task都会创建100个文件（task写入数据到磁盘文件前会先写入一个内存缓冲，满了再溢写到文件）
+    - stage0的每个task都会把相同key的数据会存到同一个他们即将被stage1的同个task使用的同一个文件中
+    - 也就是说，stage0的节点1上的所有task会把key1所对应的所有数据都放入节点1的文件x中，节点2上的所有task也会把所有key1数据到节点2上的文件x中
+    - stage1的task读取他们所要消费的那个文件（比如两个节点上的文件x都会同一个task读取），然后通过HashMap在内存中缓存，并对key所对应的values执行逻辑操作
+- spark的stage划分依据是是否需要进行shuffle，每一个shuffle都会产生2个stage（shuffle觉得stage）
+> 某个action触发job时，DAGScheduler会划分job为多个stage，依据是是否有shuffle算子，比如reduceByKey，然后将这个操作前半部分的、之前所有RDD和转化操作划分为一个stage，shuffle后半部分以及直到action为止的所有RDD和转化操作划分为另一个stage
+
 
 #### 4. spark操作调优（算子调优）
