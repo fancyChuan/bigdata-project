@@ -160,7 +160,7 @@ ${1}
 - spark的stage划分依据是是否需要进行shuffle，每一个shuffle都会产生2个stage（shuffle觉得stage）
 > 某个action触发job时，DAGScheduler会划分job为多个stage，依据是是否有shuffle算子，比如reduceByKey，然后将这个操作前半部分的、之前所有RDD和转化操作划分为一个stage，shuffle后半部分以及直到action为止的所有RDD和转化操作划分为另一个stage
 
-![image](https://github.com/fancyChuan/bigdata-project/tree/master/offline-shop/img/spark中的shuffle过程.png?raw=true)
+![image](https://github.com/fancyChuan/bigdata-project/blob/master/offline-shop/img/spark中的shuffle过程.png?raw=true)
 
 ##### 调优
 - 合并map端输出文件
@@ -168,5 +168,10 @@ ${1}
     - 设置方法 conf.set("spark.shuffle.consolidateFiles", "true") 默认是不开启的
     - 这个时候只有第一次并行执行的task会去创建文件，后面的task就会复用前面创建出来的文件。比如一个executor需要跑4个task，有2个cpu core，那么只有前两个运行的task才会创建文件
     - 在数据量比较大的时候，这个调优方法效果还是很可观的
+- 调节map端内存缓冲与reduce端内存占比
+    - 每个map的内存缓冲区默认大小是32Kb，reduce端内存缓存占比是0.2
+    - 当map端处理的数据较大的时，需要溢写到磁盘文件的次数就越多，磁盘IO就更频繁；同理，reduce端的缓冲空间较小时，也会溢写到磁盘，影响reduce端性能
+    - conf.set("spark.shuffle.file.buffer", "64")
+    - conf.set("spark.shuffle.memoryFraction","0.3")
 
 #### 4. spark操作调优（算子调优）
