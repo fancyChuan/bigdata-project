@@ -125,7 +125,31 @@ JVM调优原理依据：
     - 默认情况下，留给cache操作的内存占堆内存的60%
     - 通过日志查看每个stage的运行情况，如果gc太频繁，时间太长，就需要适当的考虑调整改参数
     - spark.storage.memoryFraction
-
+- 调节executor堆外内存
+    - 现象：数据量过大，作业运行时时不时报错：shuffle file cannot be found, task lost, OOM， 这个时候可能就是堆外内存不够用了
+    - 主要体现在executor的对外内存不够时，可能会内存溢出，导致后续的task需要从executor去拉取shuffle map output文件的时候发现executor已经挂掉了，关联的BlockManager也没有，那么就会报错
+    - 设置方式 ```--conf spark.yarn.executor.memoryOverhead=2048```
+    - 默认情况下是300M，但是在处理大数据量时可能会导致作业反复崩溃
+- 调节executor连接等待时长
+    - executor会优先从自己本地关联的BlockManager中获取数据，没有的话会通过TransferSerice去远程节点的executor的BlockManager拉取
+    - 在拉取的过程中可能遇到对面的executor正在进行垃圾回收，这个时候BlockManager等线程都会停止工作，导致无法建立连接，默认60s后就会报失败
+    - 设置方法： ```--conf spark.core.connection.ack.wait.timeout=300```
+> 在处理大数据量（不是千万级别，一般是亿级别以上）的时候，上述两个参数可以发挥作用
+```
+spark-submit \
+--class xxxx.WordCount \
+--num-executor 80 \
+--driver-memory 6g \
+--executor-memory 6g \
+--executor-cores 3
+--master yarn-cluster \
+--queue root.default \
+--conf spark.yarn.executor.memoryOverhead=2048 \
+--conf spark.core.connection.ack.wait.timeout=300 \
+/usr/local/spark/spark.jar \
+${1}
+```
+    
 #### 3. shuffle调优
 一般shuffle操作的性能操作会站到整个作业的50%-90%，10用来运行map操作，90%在shuffle操作上。
 
