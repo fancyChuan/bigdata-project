@@ -38,6 +38,7 @@ public class UserVisitSessionAnalyseSpark {
         SparkConf conf = new SparkConf()
                 .setAppName(Constants.SPARK_APP_NAME_SESSION)
                 .setMaster("local")
+                .set("spark.storage.memoryFraction", "0.6")
                 .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
                 .registerKryoClasses(new Class[]{CategorySortKey.class}) // 注册要序列化的类
                 ;

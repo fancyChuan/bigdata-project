@@ -34,7 +34,8 @@ DAO模式
 开发spark程序的注意点
 - 在算子中使用的时候，需要对变量加上final修饰
 
-性能调优
+### 性能调优
+#### 1. 常规性调优
 ```
 spark-submit \
 --class cn.fancychuan.offline-shop.core.WordCount \
@@ -108,3 +109,24 @@ spark-submit \
         - spark.locality.wait.node
         - spark.locality.wait.rack
     - 一般先看执行日志，如果发现日志上面的本地化级别都是PROCESS_LOCAL，那就不需要调节了，如果大部分是其他级别，可以调整一下，但是要注意等待时间带来整体运行时长的增加
+
+#### 2. JVM调优
+通常不会有严重的性能问题，但在troubleshooting中，JVM占了重要的地位，有可能造成线上作业报错，甚至失败
+
+JVM调优原理依据：
+> JVM内存不够大时，年轻代可能因为内存溢满频繁的进行minor gc，有一些存活下来的对象可能因为多次gc导致年龄过大而跑到老年代中，进而导致老年代中存在一大堆短生命周期的对象。
+> 当老年代空间溢满时，就会进行速度很慢的full gc（以为是针对老年代的gc，一般不会频繁，所以采取了不太复杂但消耗性能和时间的回收算法）
+
+- 降低cache操作的内存占比
+    - 内存不足时：
+        - 批发minor gc，导致spark频繁停止工作
+        - 老年代囤积大量活跃对象，导致频繁full gc，可能导致spark长时间不工作
+    - spark中，堆内存划分为两块：专门给RDD的缓存持久化用的，另一块是给算子函数运行时使用的，存放函数创建的对象
+    - 默认情况下，留给cache操作的内存占堆内存的60%
+    - 通过日志查看每个stage的运行情况，如果gc太频繁，时间太长，就需要适当的考虑调整改参数
+    - spark.storage.memoryFraction
+
+#### 3. shuffle调优
+一般shuffle操作的性能操作会站到整个作业的50%-90%，10用来运行map操作，90%在shuffle操作上。
+
+#### 4. spark操作调优（算子调优）
