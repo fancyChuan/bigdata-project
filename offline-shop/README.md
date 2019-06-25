@@ -186,3 +186,9 @@ ${1}
 ![image](https://github.com/fancyChuan/bigdata-project/blob/master/offline-shop/img/spark中的SortShuffle过程.png?raw=true)
 
 #### 4. spark操作调优（算子调优）
+- mapPartitions提升Map类操作性能
+    - spark最基本的原则：每个task仅处理一个partition的数据
+    - mapPartitions跟普通的map操作比如mapToPair的区别在于：mapPartitions(func)一次性把整个分区的数据（假设有一万条）传到函数func中处理，func只需要处理一次。而普通的map操作，func需要操作一万次
+    - mapPartitions() 操作的优缺点：
+        - 优点：一次性处理整个分区的数据，func只需要执行一次，性能较高
+        - 缺点：数据量过大时，可能导致内存不够，造成OOM
