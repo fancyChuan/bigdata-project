@@ -173,5 +173,16 @@ ${1}
     - 当map端处理的数据较大的时，需要溢写到磁盘文件的次数就越多，磁盘IO就更频繁；同理，reduce端的缓冲空间较小时，也会溢写到磁盘，影响reduce端性能
     - conf.set("spark.shuffle.file.buffer", "64")
     - conf.set("spark.shuffle.memoryFraction","0.3")
+- 使用SortShuffleManager
+    - 1.2版本以后默认的shuffle manager是 SortShuffleManager 而不是 HashShuffleManager
+    - 每个map任务会生成两个文件，一个是数据文件、一个是索引文件。（一共生成的文件数=MaxTaskNum*2）
+        - 数据文件：按照key分区，不同分区之间排序，同一分区中的数据不排序
+        - 索引文件：记录文件中每个分区的偏移量offset和范围
+    - reduce任务先读取索引文件找到offset和范围，再从数据文件读取
+    - 设置方法：conf.set("spark.shuffle.manager", "sort")
+    - conf.set("spark.shuffle.sort.bypassMergeThreshold","200") 高级参数，默认reduce任务数小于等于200的时候，不会sort并且会把文件合并成一份，节省reduce拉取数据是磁盘IO的开销
+> 1.5版本以后，出现了tungsten-sort，官网说效果跟sort差不多，区别在于tungsten-sort使用了自己实现的内存管理机制，性能有提升，也能避免shuffle过程中产生OOM，GC等异常
+    
+![image](https://github.com/fancyChuan/bigdata-project/blob/master/offline-shop/img/spark中的SortShuffle过程.png?raw=true)
 
 #### 4. spark操作调优（算子调优）
