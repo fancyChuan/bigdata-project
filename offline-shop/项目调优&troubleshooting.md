@@ -203,3 +203,5 @@ ${1}
         - 算子函数中，如果使用到外部自定义类型的变量，就需要该变量是可序列化的
         - 如果要将自定义的类型作为RDD的元素类型，那么该类型也需要是可序列化的，比如 JavaRDD<Integer, Student> 那么Student就需要可序列化
         - 不在前两种情况下，使用一些第三方的不支持序列化的类型 比如 Connection con = aRDD.foreach(...) 而Connection是不支持序列化的
+- 解决算子函数返回null导致的问题
+    - 在返回时，不返回null，比如用-99代替，之后通过filter过滤，再使用coalesce使分区更紧凑点
