@@ -204,4 +204,9 @@ ${1}
         - 对每条数据都需要单独去调用一次function
         - 读写数据库时，每条数据也需要去创建数据库链接，都需要去发送sql语句
     - foreachPartition把一整个分区的数据传入task，调用一次function，创建一次数据库连接，一次发送sql语句。要注意分区数据量过大的时候可能会出现OOM
-    
+- 使用repartition解决sparkSQL并行度低的性能问题
+    - 设置并行度的方法：
+        - conf.set("spark.default.parallelism",200) 官方推荐：application总cpu核数的2-3倍
+        - textFile(xxxx, 200) 在第2个参数也可以手动设置分区数 （比较少用）
+    - 在spark SQL中无法设置，加入从hive读取数据，那么第1个stage是没有使用设置的并行度的，需要在第2个stage开始才会使用到通过spark.default.parallelism设置的并行度
+        - 方法：使用repartition算子

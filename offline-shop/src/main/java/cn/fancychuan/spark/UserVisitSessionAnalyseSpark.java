@@ -134,8 +134,8 @@ public class UserVisitSessionAnalyseSpark {
         } catch (Exception e) {
             e.printStackTrace();
         }
-        Dataset actionDF =  sqlContext.sql(sql);
-        return actionDF.toJavaRDD();
+        Dataset actionDF =  sqlContext.sql(sql); // 读出数据可能分区数太少
+        return actionDF.toJavaRDD().repartition(100); // 进行重分区
     }
 
     /**
