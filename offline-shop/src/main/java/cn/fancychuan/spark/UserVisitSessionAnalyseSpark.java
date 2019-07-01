@@ -549,7 +549,7 @@ public class UserVisitSessionAnalyseSpark {
         // 计算每个品类的点击、下单、支付次数，为后面的join准备
         // 计算品类的点击次数， <cateId, count>
         JavaPairRDD<Long, Long> clickCategoryId2CountRDD = sessionid2detailRDD
-                .filter(tuple -> tuple._2.get(6) != null)
+                .filter(tuple -> tuple._2.get(6) != null).coalesce(100) // 使用coalesce算子把分区数减少到100，后面还有个参数决定是否shuffle
                 .mapToPair(tuple -> new Tuple2<>(tuple._2.getLong(6), 1L))
                 .reduceByKey((x, y) -> x + y);
         // 品类的下单次数， <cateId, count>
