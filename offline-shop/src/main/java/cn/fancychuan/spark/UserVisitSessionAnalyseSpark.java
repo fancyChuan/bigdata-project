@@ -509,7 +509,9 @@ public class UserVisitSessionAnalyseSpark {
         JavaPairRDD<String, Tuple2<String, Row>> extractSessionDetailRDD = extractSessionsRDD.join(sessionid2actionRDD);
         extractSessionDetailRDD.foreach(tuple -> {
             Row row = tuple._2._2;
-            insertSessionDetail2Mysql(row, taskid);
+            SessionDetail sessionDetail = getSessionDetailInstance(row, taskid);
+            ISessionDetailDAO detailDAO = DAOFactory.getSessionDetailDAO();
+            detailDAO.insert(sessionDetail);
         });
     }
 
@@ -746,14 +748,34 @@ public class UserVisitSessionAnalyseSpark {
                 });
         // 第4步：把找到的热门session明细村到mysql，便于J2EE平台查询
         JavaPairRDD<String, Tuple2<String, Row>> sessionDetailRDD = top10SessionRDD.join(sessionid2detailRDD);
-        sessionDetailRDD.foreach(tuple -> {
-            Row row = tuple._2._2;
-            insertSessionDetail2Mysql(row, taskid);
+        // 4.1 使用foreach把数据写入mysql
+//        sessionDetailRDD.foreach(tuple -> {
+//            Row row = tuple._2._2;
+//            SessionDetail sessionDetail = getSessionDetailInstance(row, taskid);
+//            // 准备写入mysql
+//            ISessionDetailDAO detailDAO = DAOFactory.getSessionDetailDAO();
+//            detailDAO.insert(sessionDetail);
+//        });
+        // 4.2 使用foreachPartition批量写入mysql，提高性能
+        sessionDetailRDD.foreachPartition(tuples -> {
+            ArrayList<SessionDetail> detailArrayList = new ArrayList<SessionDetail>();
+            while (tuples.hasNext()) {
+                Tuple2<String, Tuple2<String, Row>> tuple = tuples.next();
+                Row row = tuple._2._2;
+                SessionDetail sessionDetail = getSessionDetailInstance(row, taskid);
+                detailArrayList.add(sessionDetail);
+            }
+            // 批量写入mysql
+            ISessionDetailDAO detailDAO = DAOFactory.getSessionDetailDAO();
+            detailDAO.insertBatch(detailArrayList);
         });
 
     }
 
-    private static void insertSessionDetail2Mysql(Row row, long taskid) {
+    /**
+     * 把Row对象封装到sessionDetail
+     */
+    private static SessionDetail getSessionDetailInstance(Row row, long taskid) {
         SessionDetail sessionDetail = new SessionDetail();
         sessionDetail.setTaskid(taskid);
         sessionDetail.setUserid(row.getLong(1));
@@ -770,7 +792,6 @@ public class UserVisitSessionAnalyseSpark {
         sessionDetail.setPayCategoryIds(row.getString(10));
         sessionDetail.setPayProductIds(row.getString(11));
 
-        ISessionDetailDAO detailDAO = DAOFactory.getSessionDetailDAO();
-        detailDAO.insert(sessionDetail);
+        return sessionDetail;
     }
 }
