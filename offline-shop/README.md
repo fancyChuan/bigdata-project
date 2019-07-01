@@ -34,7 +34,7 @@ DAO模式
 开发spark程序的注意点
 - 在算子中使用的时候，需要对变量加上final修饰
 
-### 性能调优
+### 一、性能调优
 #### 1. 常规性调优
 ```
 spark-submit \
@@ -213,3 +213,9 @@ ${1}
 - reduceByKey本地聚合
     - reduceByKey相对于普通的shuffle操作（比如groupByKey）的一个特点是：会进行map端的本地聚合（combiner操作）
     - 好处：下一个stage中，需要拉取的数据变少，需要shuffle的数据量也减少，下一阶段的计算量也减少
+
+### 二、troubleshooting（解决线上故障）
+- 控制shuffle reduce端缓冲大小以避免OOM
+    - 默认缓冲大小是48M
+    - reduce端不会等到map端全部处理完数据才开始去拉数据，而是map端写一点，reduce端拉取一点，能够拉取的大小由Buffer决定。但是数据量特别大的时候，每个reduce端每次拉取数据都拉满，加上代码本身创建的对象，就可能出现OOM
+    - reduce端缓冲大小是把双刃剑：资源足够时，调大缓冲大小可以减少reduce端拉取数据的次数，加快任务速度。资源不够时，就需要减少缓冲大小，多拉取几次数据，避免OOM
