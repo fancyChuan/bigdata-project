@@ -56,7 +56,16 @@ public class UserVisitSessionAnalyseSpark {
         JavaRDD<Row> actionRDD = getActionRDDByDateRange(sqlContext, taskParam);
         // actionRDD是一个公共RDD，在后面需要多次使用，重构后只使用一次
         // 先得到 <sessionid, actionRow>
-        JavaPairRDD<String, Row> sessionid2actionRDD = actionRDD.mapToPair(row -> new Tuple2<>(row.getString(2), row));
+        // JavaPairRDD<String, Row> sessionid2actionRDD = actionRDD.mapToPair(row -> new Tuple2<>(row.getString(2), row));
+        // * 使用mapPartitionsToPair优化上一行的代码
+        JavaPairRDD<String, Row> sessionid2actionRDD = actionRDD.mapPartitionsToPair(rows -> {
+            ArrayList<Tuple2<String, Row>> list = new ArrayList<>();
+            while (rows.hasNext()) {
+                Row row = rows.next();
+                list.add(new Tuple2<>(row.getString(2), row));
+            }
+            return list.iterator();
+        });
         // sessionid2actionRDD后面用到2次，需要做持久化
         sessionid2actionRDD = sessionid2actionRDD.persist(StorageLevel.MEMORY_ONLY());
         // 对行为数据按照session粒度聚合，同时获取到用户信息
