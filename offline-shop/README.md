@@ -210,3 +210,6 @@ ${1}
         - textFile(xxxx, 200) 在第2个参数也可以手动设置分区数 （比较少用）
     - 在spark SQL中无法设置，加入从hive读取数据，那么第1个stage是没有使用设置的并行度的，需要在第2个stage开始才会使用到通过spark.default.parallelism设置的并行度
         - 方法：使用repartition算子
+- reduceByKey本地聚合
+    - reduceByKey相对于普通的shuffle操作（比如groupByKey）的一个特点是：会进行map端的本地聚合（combiner操作）
+    - 好处：下一个stage中，需要拉取的数据变少，需要shuffle的数据量也减少，下一阶段的计算量也减少
