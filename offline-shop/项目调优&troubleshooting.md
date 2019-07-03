@@ -239,3 +239,10 @@ sc.checkpointFile("hdfs://");
 rdd.persist();
 rdd.checkpoint();
 ```
+
+### 三、数据倾斜
+发生原因
+
+问题定位思路：
+- 1.到程序里找哪些地方会产生shuffle，比如groupByKey()算子、countByKey()、join等
+- 2.看log里面哪行代码导致了OOM异常，或者任务执行到了那个stage，看那个stage的task执行得特别慢，就需要去查看对应的代码位置
