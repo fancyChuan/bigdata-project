@@ -208,3 +208,15 @@ ${1}
 - 解决yarn-client模式导致的网卡流量激增问题
     - 产生原因：yarn-client提交作业后，driver是在本地机器上的，需要频繁的与各个executor通信（task的启动消息、task的执行统计消息、task的运行状态、shuffle的输出结果），通信消息特别多、通信频率特别高，就可能会导致本地的网卡流量激增
     - yarn-client的使用场景：一般只在测试环境中使用，只是偶尔使用，好处是：有详细的log日志，便于调试、开发、优化。实际在生产环境的话都是使用yarn-cluster模式
+- 解决yarn-cluster模式的JVM栈内存溢出问题
+    - 跟yarn-client的区别：
+        - yarn-client是运行在本地机器上的，而yarn-cluster是运行在集群的某一个NodeManager上
+        - yarn-client是本地机器负责spark作业的调度，所以网卡流量会激增
+        - 本地模式通常跟集群不在同一个机房，yarn-cluster性能相对更好
+    - 现象：
+        - 运行一些包含有sparkSQL的作用的时候，可能会碰到yarn-client模式下，可以正常运行，但是在yarn-cluster可能无法提交运行，会报PermGen（永久代）的内存溢出OOM
+        - 这是因为client模式下，使用的是spark客户端的默认配置，永久代的内存是128M。而cluster模式下是没有经过配置的，默认是82M
+        - 所以在sparksql特别复杂，需要的内存超过82M而小于128M的时候就会出现上述问题
+    - 解决方法：设置永久代的内存大小
+        - spark-submit脚本中加上配置： ```--conf spark.driver.extraJavaOptions="-XX:PermSize=128M -XX:MaxPermSize=256M"```
+> spark SQL 要注意：当有大量的or语句的时候，spark内部在处理or语句是递归的，超出JVM栈深度限制的话就会导致栈内存溢出
