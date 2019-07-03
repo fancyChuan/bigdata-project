@@ -220,3 +220,22 @@ ${1}
     - 解决方法：设置永久代的内存大小
         - spark-submit脚本中加上配置： ```--conf spark.driver.extraJavaOptions="-XX:PermSize=128M -XX:MaxPermSize=256M"```
 > spark SQL 要注意：当有大量的or语句的时候，spark内部在处理or语句是递归的，超出JVM栈深度限制的话就会导致栈内存溢出
+- 错误的持久化方式以及checkpoint的使用
+    - userRDD.cache() 这样子使用是错误的，应该 userRDD = userRDD.cache()
+    - 对RDD进行checkpoint的时候，会持久化一份数据到容错的文件系统上（比如HDFS）
+        - 好处在于：cache失败（比如丢失数据）的时候，可以使用上checkpoint的数据而不用重新计算所有的过程，提高了作业的可靠性
+        - 弊端在于：进行checkpoint的时候，需要写入HDFS是会消耗性能的
+    - checkpoint原理
+        - 1.在代码中，用SparkContext设置一个checkpoint目录，在容错文件系统上的一个目录
+        - 2.在代码中，需要进行checkpoint的RDD，执行RDD.checkpoint()
+        - 3.RDDCheckpointData（spark内部的API）会接管RDD，标记为marked for checkpoint，准备进行checkpoint
+        - 4.job运行完，会调用一个finalRDD.doCheckpoint()方法，顺着rdd lineage，回溯扫描，发现标记为checkpoint的rdd会进行二次标记:inProcessCheckpoint，表示正在接受checkpoint操作
+        - 5.job执行完之后，就会启动一个内部的新job，去将标识为inProcessCheckpoint的rdd数据都写入HDFS中（如果之前的RDD是cache过的，会从缓存中取数据，如果没有就重新计算在checkpoint）
+        - 6.将checkpoint过的rdd之前的依赖rdd改成CheckpointRDD*，强制改变rdd的lineage，后面如果rdd的cache获取失败，就直接通过他上游的Checkpoint去HDFS获取checkpoint的数据
+```
+// 使用方法
+sc.checkpointFile("hdfs://");
+...
+rdd.persist();
+rdd.checkpoint();
+```
