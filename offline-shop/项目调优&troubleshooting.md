@@ -205,3 +205,6 @@ ${1}
         - 不在前两种情况下，使用一些第三方的不支持序列化的类型 比如 Connection con = aRDD.foreach(...) 而Connection是不支持序列化的
 - 解决算子函数返回null导致的问题
     - 在返回时，不返回null，比如用-99代替，之后通过filter过滤，再使用coalesce使分区更紧凑点
+- 解决yarn-client模式导致的网卡流量激增问题
+    - 产生原因：yarn-client提交作业后，driver是在本地机器上的，需要频繁的与各个executor通信（task的启动消息、task的执行统计消息、task的运行状态、shuffle的输出结果），通信消息特别多、通信频率特别高，就可能会导致本地的网卡流量激增
+    - yarn-client的使用场景：一般只在测试环境中使用，只是偶尔使用，好处是：有详细的log日志，便于调试、开发、优化。实际在生产环境的话都是使用yarn-cluster模式
