@@ -553,7 +553,8 @@ public class UserVisitSessionAnalyseSpark {
         JavaPairRDD<Long, Long> clickCategoryId2CountRDD = sessionid2detailRDD
                 .filter(tuple -> tuple._2.get(6) != null).coalesce(100) // 使用coalesce算子把分区数减少到100，后面还有个参数决定是否shuffle
                 .mapToPair(tuple -> new Tuple2<>(tuple._2.getLong(6), 1L))
-                .reduceByKey((x, y) -> x + y);
+                // 如果某个品类点击了100万次，其他品类值点击了几万次，那就有可能发生数据倾斜，因此，在reduceByKey的时候可以传入一个值，用于设置shuffle的reduce端并行度
+                .reduceByKey((x, y) -> x + y, 100);
         // 品类的下单次数， <cateId, count>
         JavaPairRDD<Long, Long> orderCategoryId2CountRDD = sessionid2detailRDD
                 .filter(tuple -> tuple._2.get(8) != null)
