@@ -566,7 +566,24 @@ public class UserVisitSessionAnalyseSpark {
                     }
                     return list.iterator();
                 })
-                .reduceByKey((x, y) -> x + y);
+                .reduceByKey((x, y) -> x + y); // 这个地方也可能出现数据倾斜
+        /*
+
+                // 下面使用加随机数形成新的key来解决数据倾斜的问题
+                // (1.1)先给每个key加上随机数
+                .mapToPair(tuple -> {
+                    long key = tuple._1;
+                    long value = tuple._2;
+                    Random random = new Random();
+                    int prefix = random.nextInt(10); // 用于改造key的随机数
+                    return new Tuple2<String, Long>(prefix + "_" + key, value);
+                })
+                // (1.2)进行局部聚合统计
+                .reduceByKey((t1, t2) -> t1 + t2)
+                // (2.)把key还原，进行全局聚合统计
+                .mapToPair(pt -> new Tuple2<>(Long.valueOf(pt._1.split("_")[1]), pt._2))
+                .reduceByKey((t1, t2) -> t1 + t2);
+        */
         // 支付次数
         JavaPairRDD<Long, Long> payCategoryId2CountRDD = sessionid2detailRDD
                 .filter(tuple -> tuple._2.get(10) != null)

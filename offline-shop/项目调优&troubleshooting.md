@@ -242,6 +242,7 @@ rdd.checkpoint();
 
 ### 三、数据倾斜
 发生原因
+- TODO：总结尽可能多的场景
 
 问题定位思路：
 - 1.到程序里找哪些地方会产生shuffle，比如groupByKey()算子、countByKey()、join等
@@ -261,3 +262,8 @@ rdd.checkpoint();
     - 操作方法：使用shuffle相关算子比如countByKey、reduceByKey的时候，传入一个调节reduce并行度的参数
     - 治标不治本的方法，没有从根本上解决问题，只是尽可能缓解
     - 如果数据倾斜导致OOM，那么提高并行度以后不报OOM，能够运行，但是还是很慢，其实就不应该用这种方法了。也就是说OOM的数据倾斜，还是要选其他方法
+
+- 使用随机Key实现双重聚合
+    - 也就是给原来的key加上随机数，做聚合操作以后，需要再聚合一次完成统计目标
+    - 使用场景：groupByKey/reduceByKey （join就不适合用这种方法）
+    
