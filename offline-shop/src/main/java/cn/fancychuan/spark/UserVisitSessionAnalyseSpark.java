@@ -282,6 +282,27 @@ public class UserVisitSessionAnalyseSpark {
         JavaPairRDD<Long, Tuple2<String, Row>> userid2FullInfoRDD = joinRDD1.union(joinRDD2);
         // userid2FullInfoRDD.mapToPair(...)
 */
+/*
+        // 使用扩容表和随机数缓解数据倾斜
+        // 使用扩容表
+        JavaPairRDD<String, Row> expandedRDD = userid2InfoRDd.flatMapToPair(tuple -> {
+            ArrayList<Tuple2<String, Row>> list = new ArrayList<>();
+            for (int i = 0; i < 10; i++) {
+                list.add(new Tuple2<>(i + "_" + tuple._1, tuple._2));
+            }
+            return list.iterator();
+        });
+        // 使用随机数
+        JavaPairRDD<String, String> mappedRDD = userId2AggrPartInfoRDD.mapToPair(tuple -> {
+            Random random = new Random();
+            return new Tuple2<>(random.nextInt(10) + "_" + tuple._1, tuple._2);
+        });
+        JavaPairRDD<String, Tuple2<String, Row>> joined = mappedRDD.join(expandedRDD);
+        JavaPairRDD<Long, Tuple2<String, Row>> userid2FullInfoRDD = joined.mapToPair(tuple -> {
+            Long userid = Long.valueOf(tuple._1.split("_")[1]);
+            return new Tuple2<>(userid, tuple._2);
+        });
+*/
         return wantRDD;
     }
 
