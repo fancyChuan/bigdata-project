@@ -69,7 +69,7 @@ public class UserVisitSessionAnalyseSpark {
         // sessionid2actionRDD后面用到2次，需要做持久化
         sessionid2actionRDD = sessionid2actionRDD.persist(StorageLevel.MEMORY_ONLY());
         // 对行为数据按照session粒度聚合，同时获取到用户信息
-        JavaPairRDD<String, String> sessionid2AggrInfoRDD = aggregateBySession(sessionid2actionRDD, sqlContext);
+        JavaPairRDD<String, String> sessionid2AggrInfoRDD = aggregateBySession(sc, sessionid2actionRDD, sqlContext);
         // 使用自定义累加器
         Accumulator<String> accumulator = sc.accumulator("", new SessionArrgStatAccumulator());
         // 过滤掉非目标数据
@@ -154,7 +154,8 @@ public class UserVisitSessionAnalyseSpark {
 //                return new Tuple2<>(row.getString(2), row);
 //            }
 //        });
-    private static JavaPairRDD<String, String> aggregateBySession(JavaPairRDD<String, Row> sessionid2ActionRDD, SQLContext sqlContext) {
+    private static JavaPairRDD<String, String> aggregateBySession(
+            JavaSparkContext sc, JavaPairRDD<String, Row> sessionid2ActionRDD, SQLContext sqlContext) {
         // 2. 按照sessionId汇总
         JavaPairRDD<String, Iterable<Row>> sessid2rdds = sessionid2ActionRDD.groupByKey();
         // 3. 这里对行为数据聚合拼接，结果为 <userId, actionData>
@@ -241,6 +242,33 @@ public class UserVisitSessionAnalyseSpark {
                     + Constants.FIELD_SEX + "=" + sex;
             return new Tuple2<>(sessionId, wantInfo);
         });
+/*      // 上面的userId2AggrPartInfoRDD.join(userid2InfoRDd)可能会发生数据倾斜。这里可以采用map join的方式。如下面注释的代码
+        List<Tuple2<Long, Row>> userinfos = userid2InfoRDd.collect();
+        final Broadcast<List<Tuple2<Long, Row>>> userInfoBroadcast = sc.broadcast(userinfos);
+        JavaPairRDD<String, String> wantRDD = userId2AggrPartInfoRDD.mapToPair(tuple -> {
+            List<Tuple2<Long, Row>> userInfos = userInfoBroadcast.value();
+            HashMap<Long, Row> userInfoMap = new HashMap<>();
+            for (Tuple2<Long, Row> userInfo : userInfos) {
+                userInfoMap.put(userInfo._1, userInfo._2);
+            }
+            String partAggrInfo = tuple._2;
+            Row userInfoRow = userInfoMap.get(tuple._1);
+
+            String sessionId = StringUtils.getFieldFromConcatString(partAggrInfo, "\\|", Constants.FIELD_SESSION_ID);
+
+            int age = userInfoRow.getInt(3);
+            String professional = userInfoRow.getString(4);
+            String city = userInfoRow.getString(5);
+            String sex = userInfoRow.getString(6);
+
+            String fullAggrInfo = partAggrInfo + "|"
+                    + Constants.FIELD_AGE + "=" + age + "|"
+                    + Constants.FIELD_PROFESSIONAL + "=" + professional + "|"
+                    + Constants.FIELD_CITY + "=" + city + "|"
+                    + Constants.FIELD_SEX + "=" + sex;
+            return new Tuple2<>(sessionId, fullAggrInfo);
+        });
+*/
         return wantRDD;
     }
 

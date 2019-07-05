@@ -266,4 +266,7 @@ rdd.checkpoint();
 - 使用随机Key实现双重聚合
     - 也就是给原来的key加上随机数，做聚合操作以后，需要再聚合一次完成统计目标
     - 使用场景：groupByKey/reduceByKey （join就不适合用这种方法）
+- 将reduce join转为map join
+    - 适用场景：其中一个rdd是比较小的，而且内存足够存放这个小RDD（注意spark中做map join是需要把小RDD做成广播变量的！跟hive的map join不一样）
+    - 遇到数据倾斜的问题优先考虑这种方法
     
