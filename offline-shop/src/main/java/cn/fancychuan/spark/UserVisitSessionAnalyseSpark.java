@@ -269,6 +269,19 @@ public class UserVisitSessionAnalyseSpark {
             return new Tuple2<>(sessionId, fullAggrInfo);
         });
 */
+/*      // 还有一种方式，就是把导致数据倾斜的key通过采样找到，然后过滤出来，单独进行join。两次join后再合并
+        JavaPairRDD<Long, String> sampleRDD = userId2AggrPartInfoRDD.sample(false, 0.1, 9); // 是否放回采样
+        JavaPairRDD<Long, Long> sortedSampleRDD = sampleRDD.mapToPair(tuple -> new Tuple2<>(tuple._1, 1L)).reduceByKey((x1, x2) -> x1 + x2)
+                .mapToPair(tuple -> new Tuple2<>(tuple._2, tuple._1)).sortByKey();
+        // 取出数量最多的一个key
+        Long skewedUserid = sortedSampleRDD.take(1).get(0)._2;
+        JavaPairRDD<Long, String> skewedRDD = userId2AggrPartInfoRDD.filter(tuple -> tuple._1.equals(skewedUserid));
+        JavaPairRDD<Long, String> commonRDD = userId2AggrPartInfoRDD.filter(tuple -> !tuple._1.equals(skewedUserid));
+        JavaPairRDD<Long, Tuple2<String, Row>> joinRDD1 = skewedRDD.join(userid2InfoRDd);
+        JavaPairRDD<Long, Tuple2<String, Row>> joinRDD2 = commonRDD.join(userid2InfoRDd); // 正常的key所对应的RDD
+        JavaPairRDD<Long, Tuple2<String, Row>> userid2FullInfoRDD = joinRDD1.union(joinRDD2);
+        // userid2FullInfoRDD.mapToPair(...)
+*/
         return wantRDD;
     }
 
