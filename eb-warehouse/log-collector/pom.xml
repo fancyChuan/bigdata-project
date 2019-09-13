@@ -57,7 +57,7 @@
                     </descriptorRefs>
                     <archive>
                         <manifest>
-                            <mainClass></mainClass>
+                            <mainClass>cn.fancychuan.appclient.AppMain</mainClass>
                         </manifest>
                     </archive>
                 </configuration>
