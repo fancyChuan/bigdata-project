@@ -1,5 +1,6 @@
 package cn.fancychuan.appclient;
 
+import java.io.UnsupportedEncodingException;
 import java.util.Random;
 
 public class Utils {
@@ -32,4 +33,42 @@ public class Utils {
         return str.toString();
     }
 
+    /**
+     * 生成单个汉字
+     */
+    public static char getRandomChar() {
+        String str = "";
+        int hightPos; //
+        int lowPos;
+
+        Random random = new Random();
+        //随机生成汉子的两个字节
+        hightPos = (176 + Math.abs(random.nextInt(39)));
+        lowPos = (161 + Math.abs(random.nextInt(93)));
+
+        byte[] b = new byte[2];
+        b[0] = (Integer.valueOf(hightPos)).byteValue();
+        b[1] = (Integer.valueOf(lowPos)).byteValue();
+
+        try {
+            str = new String(b, "GBK");
+        } catch (UnsupportedEncodingException e) {
+            e.printStackTrace();
+            System.out.println("错误");
+        }
+
+        return str.charAt(0);
+    }
+
+    /**
+     * 拼接成多个汉字
+     */
+    public static String getCONTENT() {
+        StringBuilder str = new StringBuilder();
+        Random random = new Random();
+        for (int i = 0; i <random.nextInt(100); i++) {
+            str.append(getRandomChar());
+        }
+        return str.toString();
+    }
 }
