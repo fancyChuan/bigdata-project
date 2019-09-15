@@ -34,7 +34,7 @@ public class AppMain {
 
     public static void main(String[] args) {
         Long delay = args.length > 0 ? Long.parseLong(args[0]) : 0L;
-        int loop_len = args.length > 0 ? Integer.parseInt(args[0]) : 10;
+        int loop_len = args.length > 0 ? Integer.parseInt(args[0]) : 1000;
         // 生成数据
         generateLog(delay, loop_len);
 
