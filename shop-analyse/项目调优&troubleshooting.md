@@ -124,7 +124,7 @@ ${1}
 - spark的stage划分依据是是否需要进行shuffle，每一个shuffle都会产生2个stage（shuffle觉得stage）
 > 某个action触发job时，DAGScheduler会划分job为多个stage，依据是是否有shuffle算子，比如reduceByKey，然后将这个操作前半部分的、之前所有RDD和转化操作划分为一个stage，shuffle后半部分以及直到action为止的所有RDD和转化操作划分为另一个stage
 
-![image](https://github.com/fancyChuan/bigdata-project/blob/master/offline-shop/img/spark中的shuffle过程.png?raw=true)
+![image](img/spark中的shuffle过程.png)
 
 ##### 调优
 - 合并map端输出文件
@@ -147,7 +147,7 @@ ${1}
     - conf.set("spark.shuffle.sort.bypassMergeThreshold","200") 高级参数，默认reduce任务数小于等于200的时候，不会sort并且会把文件合并成一份，节省reduce拉取数据是磁盘IO的开销
 > 1.5版本以后，出现了tungsten-sort，官网说效果跟sort差不多，区别在于tungsten-sort使用了自己实现的内存管理机制，性能有提升，也能避免shuffle过程中产生OOM，GC等异常
     
-![image](https://github.com/fancyChuan/bigdata-project/blob/master/offline-shop/img/spark中的SortShuffle过程.png?raw=true)
+![image](img/spark中的SortShuffle过程.png)
 
 #### 4. spark操作调优（算子调优）
 - mapPartitions提升Map类操作性能
