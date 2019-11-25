@@ -11,6 +11,7 @@
   <modules>
     <module>log-collector</module>
     <module>base-knowledge</module>
+    <module>flume-interceptor</module>
   </modules>
 
   <name>shop-warehouse</name>
