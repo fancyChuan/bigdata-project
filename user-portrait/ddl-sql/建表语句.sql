@@ -20,7 +20,8 @@ partitioned by ( `data_date` string comment '数据日期'
                 , `labelid` string comment '标签id')
 ;
 
-
+-- 比如用户当日浏览某三级品类商品3次
+-- act_type_id行为类型（比如浏览、搜索、收藏、下单） tag_type_id标签类型（比如母婴、3C、数码等）
 CREATE TABLE dw.userprofile_act_feature_append (
   labelid STRING COMMENT '标签id',
   cookieid STRING COMMENT '用户id',
