@@ -1,6 +1,7 @@
 #! /bin/bash
 # 同时在两台机器上运行
-for i in s01 s02
+for i in hadoop102 hadoop103
 do
-    ssh $i "java -classpath /opt/module/log-collector-1.0-SNAPSHOT-jar-with-dependencies.jar com.atguigu.appclient.AppMain $1 $2 > /data/logs/test.log &"
+    echo ---------生成日志
+    ssh $i "java -classpath /home/appuser/forlearn/shop-wh/log-collector-1.0-SNAPSHOT-jar-with-dependencies.jar cn.fancychuan.appclient.AppMain $1 $2  >/dev/null 2>&1 &"
 done
