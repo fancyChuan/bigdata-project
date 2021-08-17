@@ -5,7 +5,7 @@ case $1 in
         for i in hadoop102 hadoop103
         do
                 echo " --------启动 $i 采集flume-------"
-                ssh $i "nohup /usr/local/flume/bin/flume-ng agent --conf-file /home/appuser/forlearn/shop-wh/flumeconf --name a1 -Dflume.root.logger=INFO,LOGFILE >/home/appuser/forlearn/shop-wh/flumetest1 2>&1  &"
+                ssh $i "nohup /usr/local/flume/bin/flume-ng agent --conf-file /home/appuser/forlearn/shop-wh/flumeconf/file-flume-kafka.conf --name a1 -Dflume.root.logger=INFO,LOGFILE >/home/appuser/forlearn/shop-wh/flumetest1 2>&1  &"
         done
 };;
 "stop"){
