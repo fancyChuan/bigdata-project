@@ -32,16 +32,11 @@ public class MyKafkaUtil {
     }
 
     public static FlinkKafkaConsumer<String> getKafkaConsumer(String topic, String groupId) {
+        Properties props = new Properties();
+        props.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
+        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, brokers);
 
-        Properties properties = new Properties();
-
-        properties.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
-        properties.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, brokers);
-
-        return new FlinkKafkaConsumer<String>(topic,
-                new SimpleStringSchema(),
-                properties);
-
+        return new FlinkKafkaConsumer<String>(topic, new SimpleStringSchema(), props);
     }
 
     //拼接Kafka相关属性到DDL

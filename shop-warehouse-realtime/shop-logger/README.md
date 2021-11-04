@@ -22,6 +22,7 @@ java -jar /home/appuser/forlearn/shop-flink/rt_applog/shop-logger-0.0.1-SNAPSHOT
 
 3、启动模拟数据生成的程序
 ```
+# 注意需要在 application.yml所在的目录执行下面的命令
 java -jar /home/appuser/forlearn/shop-flink/rt_applog/gmall2020-mock-log-2020-12-18.jar
 ```
 
