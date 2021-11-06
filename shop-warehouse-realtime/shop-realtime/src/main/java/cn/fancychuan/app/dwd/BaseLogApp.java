@@ -10,12 +10,17 @@ import org.apache.flink.api.common.state.ValueStateDescriptor;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.datastream.DataStreamSource;
+import org.apache.flink.streaming.api.datastream.KeyedStream;
 import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.ProcessFunction;
 import org.apache.flink.util.Collector;
 import org.apache.flink.util.OutputTag;
 
+/**
+ * 数据流：web/app -> nginx -> spring boot -> kafka(ods) -> Flink:BaseLogApp -> kafka(dwd)
+ * 程 序：mockLog -> nginx -> shop-logger.sh -> kafka ->  Flink:BaseLogApp -> kafka
+ */
 public class BaseLogApp {
     public static void main(String[] args) throws Exception {
 
@@ -30,7 +35,7 @@ public class BaseLogApp {
 
         // 3. 将字符串转为json对象
         // 这里要注意检查脏数据，而脏数据其实也是需要保留的，由此得使用process，用map的话做不到
-        OutputTag<String> outputTag = new OutputTag<>("Dirty");
+        OutputTag<String> outputTag = new OutputTag<String>("Dirty"){};
         SingleOutputStreamOperator<JSONObject> jsonObjStream = kafkaDS.process(
                 new ProcessFunction<String, JSONObject>() {
                     @Override
@@ -47,7 +52,8 @@ public class BaseLogApp {
 
         // 4. 新老用户的判断，用状态编程
         // 跟进mid来判断
-        SingleOutputStreamOperator<JSONObject> jsonObjWithNewFlagDS = jsonObjStream.map(new RichMapFunction<JSONObject, JSONObject>() {
+        KeyedStream<JSONObject, String> jsonObjDS = jsonObjStream.keyBy(jsonObject -> jsonObject.getJSONObject("common").getString("mid"));
+        SingleOutputStreamOperator<JSONObject> jsonObjWithNewFlagDS = jsonObjDS.map(new RichMapFunction<JSONObject, JSONObject>() {
             private ValueState<String> valueState;
 
             @Override
