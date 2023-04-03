@@ -19,6 +19,7 @@ public class FlinkCDC {
                 .databaseList("gmall-flink")
                 // 可选配置，不配置时默认为整库。注意格式是：db.table
 //                .tableList("gmall-flink.base_trademark")
+                // 使用了自定义的反序列化器，目的是为了让下游系统处理方便（处理成json对象）
                 .deserializer(new CustomerDeserialization())
                 .startupOptions(StartupOptions.latest())
                 .build();
